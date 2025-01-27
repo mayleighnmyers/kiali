@@ -22,7 +22,7 @@ import { SortableTh } from '../Table/SimpleTable';
 import { FilterSelected, StatefulFilters } from 'components/Filters/StatefulFilters';
 import { ActiveFiltersInfo } from 'types/Filters';
 import { runFilters } from 'components/FilterList/FilterHelper';
-import { ztunnelServiceFilters, ztunnelWorkloadFilters } from './Filters';
+import { ztunnelFilters } from './Filters';
 import { ZtunnelWorkloadsTable } from './ZtunnelWorkloadsTable';
 const resources: string[] = ['services', 'workloads'];
 
@@ -31,11 +31,9 @@ const tabName = 'ztunnelTab';
 const defaultTab = 'services';
 
 type ZtunnelConfigProps = {
-  workloadItems: ZtunnelWorkload[];
   lastRefreshAt: TimeInMilliseconds;
   namespace: string;
   workload: Workload;
-  serviceItems: ZtunnelService[];
 };
 
 const fullHeightStyle = kialiStyle({
@@ -62,18 +60,19 @@ export const ZtunnelConfig: React.FC<ZtunnelConfigProps> = (props: ZtunnelConfig
   const [activeKey, setActiveKey] = React.useState(ztunnelTabs.indexOf(activeTab(tabName, defaultTab)));
   const [resource, setResource] = React.useState(activeTab(tabName, defaultTab));
 
-  const serviceFilters = ztunnelServiceFilters(config?.services);
-  const workloadFilters = ztunnelWorkloadFilters(config?.workloads);
+  const serviceFilters = ztunnelFilters(config?.services);
+  const workloadFilters = ztunnelFilters(config?.workloads);
 
   const [workloadActiveFilters, workloadSetActiveFilters] = React.useState<ActiveFiltersInfo>(
     FilterSelected.init(workloadFilters)
   );
+
   const [serviceActiveFilters, serviceSetActiveFilters] = React.useState<ActiveFiltersInfo>(
     FilterSelected.init(serviceFilters)
   );
 
-  const workloadFilteredItem = runFilters(props.workloadItems || [], workloadFilters, workloadActiveFilters);
-  const serviceFilteredItem = runFilters(props.serviceItems, serviceFilters, serviceActiveFilters);
+  const workloadFilteredItem = runFilters(config?.workloads, workloadFilters, workloadActiveFilters);
+  const serviceFilteredItem = runFilters(config?.services, serviceFilters, serviceActiveFilters);
 
   const prevResource = React.createRef();
   const prevPod = React.createRef();
