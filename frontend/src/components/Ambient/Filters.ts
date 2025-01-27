@@ -19,33 +19,31 @@ const byServices = (services: FilterValue[]): RunnableFilter<ZtunnelService | Zt
     filterType: AllFilterTypes.typeAhead,
     action: FILTER_ACTION_APPEND,
     filterValues: services,
-    run: (item, filters) => filters.filters.some(f => f.value === item.services)
+    run: (item, filters) => filters.filters.some(f => f.value === item.name)
   };
 };
 
-export const ztunnelServiceFilters = (spans: ZtunnelService[]): RunnableFilter<ZtunnelService>[] => {
-  const namespace = new Set<string>();
+export const ztunnelFilters = (
+  ztunnelItems: ZtunnelService[] | ZtunnelWorkload[]
+): RunnableFilter<ZtunnelService | ZtunnelWorkload>[] => {
+  const namespaces = new Set<string>();
   const services = new Set<string>();
-  spans.forEach(s => {
-    namespace.add(s.namespace);
-    services.add(s.services);
-  });
-  return [
-    byNamespaces(Array.from(namespace).map(w => ({ id: w, title: w }))),
-    byServices(Array.from(services).map(w => ({ id: w, title: w })))
-  ];
-};
 
-export const ztunnelWorkloadFilters = (spans: ZtunnelWorkload[]): RunnableFilter<ZtunnelWorkload>[] => {
-  const namespace = new Set<string>();
-  const services = new Set<string>();
-  spans.forEach(s => {
-    namespace.add(s.namespace);
-    services.add(s.services);
+  ztunnelItems.forEach((item: ZtunnelService | ZtunnelWorkload) => {
+    namespaces.add(item.namespace);
+    services.add(item.name);
   });
 
   return [
-    byNamespaces(Array.from(namespace).map(w => ({ id: w, title: w }))),
-    byServices(Array.from(services).map(w => ({ id: w, title: w })))
+    byNamespaces(
+      Array.from(namespaces)
+        .sort()
+        .map(w => ({ id: w, title: w }))
+    ),
+    byServices(
+      Array.from(services)
+        .sort()
+        .map(w => ({ id: w, title: w }))
+    )
   ];
 };

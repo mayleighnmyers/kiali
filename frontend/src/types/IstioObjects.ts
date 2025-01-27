@@ -1569,15 +1569,12 @@ export type SocketAddress = {
 };
 
 export type ZtunnelService = {
-  info: any;
-  services: string;
   endpoints: Record<string, ZtunnelEndpoint>;
   hostname: string;
   ipFamilies: string;
   name: string;
   namespace: string;
   ports: Record<string, number>;
-  service: string;
   subjectAltNames: string[];
   vips: string[];
   waypoint: ZtunnelWaypoint;
@@ -1595,7 +1592,6 @@ export type ZtunnelWaypoint = {
 };
 
 export type ZtunnelWorkload = {
-  forEach: any;
   canonicalName: string;
   canonicalRevision: string;
   clusterId: string;
@@ -1605,12 +1601,10 @@ export type ZtunnelWorkload = {
   node: string;
   protocol: string;
   serviceAccount: string;
-  services: string;
   status: string;
   trustDomain: string;
   uid: string;
   waypoint?: ZtunnelWaypoint;
-  workload: string;
   workloadIps: string[];
   workloadName: string;
   workloadType: string;
