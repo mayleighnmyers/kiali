@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kiali/kiali/ai/mcp/get_action_ui"
+	"github.com/kiali/kiali/ai/mcputil"
 	"github.com/kiali/kiali/business"
 	"github.com/kiali/kiali/config"
 )
@@ -133,18 +134,18 @@ func Execute(r *http.Request, args map[string]interface{}, businessLayer *busine
 }
 
 func createFileAction(ctx context.Context, args map[string]interface{}, businessLayer *business.Layer, conf *config.Config) []get_action_ui.Action {
-	action, _ := args["action"].(string)
+	action := mcputil.GetStringArg(args, "action")
 	operation := strings.ToLower(strings.TrimSpace(action))
 	if operation != "create" && operation != "patch" && operation != "delete" {
 		operation = ""
 	}
-	cluster, _ := args["cluster"].(string)
-	object, _ := args["object"].(string)
-	kind, _ := args["kind"].(string)
-	group, _ := args["group"].(string)
-	version, _ := args["version"].(string)
-	namespace, _ := args["namespace"].(string)
-	data, _ := args["data"].(string)
+	cluster := mcputil.GetStringArg(args, "cluster")
+	object := mcputil.GetStringArg(args, "object")
+	kind := mcputil.GetStringArg(args, "kind")
+	group := mcputil.GetStringArg(args, "group")
+	version := mcputil.GetStringArg(args, "version")
+	namespace := mcputil.GetStringArg(args, "namespace")
+	data := mcputil.GetStringArg(args, "data")
 
 	// Get initials of Kind in lowercase
 	var initials string
@@ -460,13 +461,13 @@ func validateReadOnlyIstioConfigInput(args map[string]interface{}) error {
 
 // validateIstioConfigInput centralizes validation rules for manage istio config tool (write actions).
 func validateIstioConfigInput(args map[string]interface{}) error {
-	action, _ := args["action"].(string)
-	namespace, _ := args["namespace"].(string)
-	group, _ := args["group"].(string)
-	version, _ := args["version"].(string)
-	kind, _ := args["kind"].(string)
-	object, _ := args["object"].(string)
-	data, _ := args["data"].(string)
+	action := mcputil.GetStringArg(args, "action")
+	namespace := mcputil.GetStringArg(args, "namespace")
+	group := mcputil.GetStringArg(args, "group")
+	version := mcputil.GetStringArg(args, "version")
+	kind := mcputil.GetStringArg(args, "kind")
+	object := mcputil.GetStringArg(args, "object")
+	data := mcputil.GetStringArg(args, "data")
 	payload := data
 	switch action {
 	case "create", "patch", "delete":
