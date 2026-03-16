@@ -2,7 +2,7 @@ package get_mesh_graph
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -45,40 +45,71 @@ func Execute(r *http.Request, args map[string]interface{}, business *business.La
 	prom prometheus.ClientInterface, clientFactory kubernetes.ClientFactory, kialiCache cache.KialiCache, conf *config.Config, grafana *grafana.Service, perses *perses.Service, discovery *istio.Discovery) (interface{}, int) {
 	var toolArgs MeshGraphArgs
 	ctx := r.Context()
+
 	toolArgs.RateInterval = mcputil.GetStringOrDefault(args, mcputil.DefaultRateInterval, "rateInterval")
 	toolArgs.GraphType = mcputil.GetStringOrDefault(args, mcputil.DefaultGraphType, "graphType")
 	toolArgs.ClusterName = mcputil.GetStringOrDefault(args, conf.KubernetesConfig.ClusterName, "clusterName")
-	// Parse arguments: allow either `namespace` or `namespaces` (comma-separated string)
+
+	// Parse namespaces argument (comma-separated string)
 	namespaces := make([]string, 0)
+	var invalidAccess []string
 	seen := map[string]struct{}{}
-	if v := mcputil.GetStringArg(args, "namespaces"); v != "" {
-		for _, ns := range strings.Split(v, ",") {
+
+	namespacesArg := mcputil.GetStringArg(args, "namespaces")
+
+	if namespacesArg != "" {
+		for _, ns := range strings.Split(namespacesArg, ",") {
 			ns_trimmed := strings.TrimSpace(ns)
 			if ns_trimmed == "" {
 				continue
 			}
+			// Skip duplicates
 			if _, ok := seen[ns_trimmed]; ok {
 				continue
 			}
+			seen[ns_trimmed] = struct{}{}
+
+			// Validate access to this namespace
 			_, err := mcputil.CheckNamespaceAccess(r, conf, kialiCache, discovery, clientFactory, ns_trimmed, toolArgs.ClusterName)
 			if err != nil {
-				return err.Error(), http.StatusForbidden
+				invalidAccess = append(invalidAccess, ns_trimmed)
+				continue
 			}
-			seen[ns_trimmed] = struct{}{}
 			namespaces = append(namespaces, ns_trimmed)
 		}
-	}
 
-	toolArgs.Namespaces = namespaces
+		// If all requested namespaces are inaccessible, return 403
+		if len(namespaces) == 0 && len(invalidAccess) > 0 {
+			return fmt.Sprintf("requested namespace(s) not accessible or do not exist: %s", strings.Join(invalidAccess, ", ")), http.StatusForbidden
+		}
+	}
 
 	resp := GetMeshGraphResponse{
 		Errors: make(map[string]string),
 	}
 
-	// If we still have no namespaces to work with, return early with error info.
-	if len(toolArgs.Namespaces) == 0 {
-		return errors.New("namespaces argument is empty or there are no namespaces available or you don't have access to any of them"), http.StatusBadRequest
+	// Add warning if some namespaces were skipped
+	if len(invalidAccess) > 0 {
+		resp.Errors["namespaces"] = fmt.Sprintf("requested namespace(s) not accessible or do not exist (skipped): %s", strings.Join(invalidAccess, ", "))
 	}
+
+	// Validate that at least one namespace was provided
+	if len(namespaces) == 0 {
+		return "namespaces parameter is required", http.StatusBadRequest
+	}
+
+	toolArgs.Namespaces = namespaces
+
+	// Fetch all available namespaces for the response
+	nsList, nsErr := business.Namespace.GetClusterNamespaces(ctx, toolArgs.ClusterName)
+	if nsErr != nil {
+		return nsErr.Error(), http.StatusBadRequest
+	}
+	raw, marshalErr := json.Marshal(nsList)
+	if marshalErr != nil {
+		return marshalErr.Error(), http.StatusBadRequest
+	}
+	resp.Namespaces = raw
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
