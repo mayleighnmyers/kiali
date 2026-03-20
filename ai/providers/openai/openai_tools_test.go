@@ -172,6 +172,28 @@ func TestConvertToolToOpenAI_FromToolDefinition_GetLogs(t *testing.T) {
 	assert.Equal(t, expected, converted)
 }
 
+func TestConvertToolToOpenAI_FromToolDefinition_GetMeshStatus(t *testing.T) {
+	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_mesh_status.yaml"))
+	require.NoError(t, err)
+
+	converted := convertToolToOpenAI(tool)
+
+	expected := openai.ChatCompletionToolUnionParam{
+		OfFunction: &openai.ChatCompletionFunctionToolParam{
+			Function: openai.FunctionDefinitionParam{
+				Name:        "get_mesh_status",
+				Description: openai.String("Retrieves the high-level health, topology, and environment details of the Istio service mesh. Returns multi-cluster control plane status (istiod), data plane namespace health (including ambient mesh status), observability stack health (Prometheus, Grafana...), and component connectivity. Use this tool as the first step to diagnose mesh-wide issues, verify Istio/Kiali versions, or check overall health before drilling into specific workloads."),
+				Parameters: openai.FunctionParameters{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	require.NotNil(t, converted.OfFunction)
+	assert.Equal(t, expected, converted)
+}
+
 func TestConvertToolToOpenAI_FromToolDefinition_GetMeshGraph(t *testing.T) {
 	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_mesh_traffic_graph.yaml"))
 	require.NoError(t, err)
