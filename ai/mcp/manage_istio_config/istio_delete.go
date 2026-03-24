@@ -6,18 +6,19 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/kiali/kiali/ai/mcputil"
 	"github.com/kiali/kiali/business"
 	"github.com/kiali/kiali/config"
 )
 
 func IstioDelete(r *http.Request, args map[string]interface{}, businessLayer *business.Layer, conf *config.Config) (res interface{}, status int) {
 	ctx := r.Context()
-	cluster, _ := args["cluster"].(string)
-	namespace, _ := args["namespace"].(string)
-	group, _ := args["group"].(string)
-	version, _ := args["version"].(string)
-	kind, _ := args["kind"].(string)
-	object, _ := args["object"].(string)
+	cluster := mcputil.GetStringArg(args, "clusterName")
+	namespace := mcputil.GetStringArg(args, "namespace")
+	group := mcputil.GetStringArg(args, "group")
+	version := mcputil.GetStringArg(args, "version")
+	kind := mcputil.GetStringArg(args, "kind")
+	object := mcputil.GetStringArg(args, "object")
 
 	if cluster == "" {
 		cluster = conf.KubernetesConfig.ClusterName
