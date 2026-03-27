@@ -22,10 +22,12 @@ import (
 )
 
 // ExecuteReadOnly runs read-only actions (list, get) for Istio config. Use this for the manage_istio_config_read tool.
+// All errors are returned with HTTP 200 so the LLM can interpret and relay
+// them to the user instead of the execution framework treating them as fatal.
 func ExecuteReadOnly(kialiInterface *mcputil.KialiInterface, args map[string]interface{}) (interface{}, int) {
 	action := mcputil.GetStringArg(args, "action")
 	if err := validateReadOnlyIstioConfigInput(args); err != nil {
-		return err.Error(), http.StatusBadRequest
+		return err.Error(), http.StatusOK
 	}
 	if action != "list" {
 		group := mcputil.GetStringArg(args, "group")
@@ -34,18 +36,27 @@ func ExecuteReadOnly(kialiInterface *mcputil.KialiInterface, args map[string]int
 		gvk := schema.GroupVersionKind{Group: group, Version: version, Kind: kind}
 		if !business.GetIstioAPI(gvk) {
 			if group == "gateway.networking.k8s.io" && kind == "Gateway" && version == "v1beta1" {
-				return fmt.Sprintf("Object type not managed: %s. Hint: try version 'v1' for Gateway API resources.", gvk.String()), http.StatusBadRequest
+				return fmt.Sprintf("Object type not managed: %s. Hint: try version 'v1' for Gateway API resources.", gvk.String()), http.StatusOK
 			}
-			return fmt.Sprintf("Object type not managed: %s", gvk.String()), http.StatusBadRequest
+			return fmt.Sprintf("Object type not managed: %s", gvk.String()), http.StatusOK
 		}
 	}
+
+	if action == "get" {
+		namespace := mcputil.GetStringArg(args, "namespace")
+		clusterName := mcputil.GetStringOrDefault(args, kialiInterface.Conf.KubernetesConfig.ClusterName, "clusterName")
+		if msg, code := checkNamespaceExists(kialiInterface.Request.Context(), kialiInterface.BusinessLayer, namespace, clusterName); code != 0 {
+			return msg, http.StatusOK
+		}
+	}
+
 	switch action {
 	case "list":
 		return IstioList(kialiInterface.Request.Context(), args, kialiInterface.BusinessLayer, kialiInterface.Conf)
 	case "get":
 		return IstioGet(kialiInterface.Request.Context(), args, kialiInterface.BusinessLayer, kialiInterface.Conf)
 	default:
-		return fmt.Errorf("invalid action %q: must be one of list, get", action), http.StatusBadRequest
+		return fmt.Sprintf("invalid action %q: must be one of list, get", action), http.StatusOK
 	}
 }
 
@@ -76,11 +87,11 @@ func Execute(kialiInterface *mcputil.KialiInterface, args map[string]interface{}
 	// mutations, so the user never sees a YAML editor for a non-existent namespace.
 	{
 		namespace, _ := args["namespace"].(string)
-		cluster, _ := args["clusterName"].(string)
-		if cluster == "" {
-			cluster = kialiInterface.Conf.KubernetesConfig.ClusterName
+		clusterName, _ := args["clusterName"].(string)
+		if clusterName == "" {
+			clusterName = kialiInterface.Conf.KubernetesConfig.ClusterName
 		}
-		if msg, code := checkNamespaceExists(kialiInterface.Request.Context(), kialiInterface.BusinessLayer, namespace, cluster); code != 0 {
+		if msg, code := checkNamespaceExists(kialiInterface.Request.Context(), kialiInterface.BusinessLayer, namespace, clusterName); code != 0 {
 			return msg, code
 		}
 	}
@@ -161,7 +172,7 @@ func createFileAction(ctx context.Context, args map[string]interface{}, business
 	if operation != "create" && operation != "patch" && operation != "delete" {
 		operation = ""
 	}
-	cluster := mcputil.GetStringArg(args, "clusterName")
+	clusterName := mcputil.GetStringArg(args, "clusterName")
 	object := mcputil.GetStringArg(args, "object")
 	kind := mcputil.GetStringArg(args, "kind")
 	group := mcputil.GetStringArg(args, "group")
@@ -218,7 +229,7 @@ func createFileAction(ctx context.Context, args map[string]interface{}, business
 			Kind:      get_action_ui.ActionKindFile,
 			Payload:   payload,
 			Operation: operation,
-			Cluster:   cluster,
+			Cluster:   clusterName,
 			Namespace: namespace,
 			Group:     group,
 			Version:   version,
@@ -229,7 +240,7 @@ func createFileAction(ctx context.Context, args map[string]interface{}, business
 }
 
 func renderMergedPatchPreviewYAML(ctx context.Context, args map[string]interface{}, businessLayer *business.Layer, conf *config.Config) (string, error) {
-	cluster := mcputil.GetStringArg(args, "clusterName")
+	clusterName := mcputil.GetStringArg(args, "clusterName")
 	namespace := mcputil.GetStringArg(args, "namespace")
 	group := mcputil.GetStringArg(args, "group")
 	version := mcputil.GetStringArg(args, "version")
@@ -237,12 +248,12 @@ func renderMergedPatchPreviewYAML(ctx context.Context, args map[string]interface
 	object := mcputil.GetStringArg(args, "object")
 	data := mcputil.GetStringArg(args, "data")
 
-	if cluster == "" {
-		cluster = conf.KubernetesConfig.ClusterName
+	if clusterName == "" {
+		clusterName = conf.KubernetesConfig.ClusterName
 	}
 
 	gvk := schema.GroupVersionKind{Group: group, Version: version, Kind: kind}
-	details, err := businessLayer.IstioConfig.GetIstioConfigDetails(ctx, cluster, namespace, gvk, object)
+	details, err := businessLayer.IstioConfig.GetIstioConfigDetails(ctx, clusterName, namespace, gvk, object)
 	if err != nil {
 		return "", err
 	}
@@ -295,15 +306,15 @@ func renderMergedPatchPreviewYAML(ctx context.Context, args map[string]interface
 // Strategy: Try to load existing object first. If exists, merge LLM changes onto it.
 // Otherwise, use template with required defaults.
 func ensureCompleteCreateYAML(args map[string]interface{}, data string, ctx context.Context, businessLayer *business.Layer, conf *config.Config) (string, error) {
-	cluster := mcputil.GetStringArg(args, "clusterName")
+	clusterName := mcputil.GetStringArg(args, "clusterName")
 	namespace := mcputil.GetStringArg(args, "namespace")
 	group := mcputil.GetStringArg(args, "group")
 	version := mcputil.GetStringArg(args, "version")
 	kind := mcputil.GetStringArg(args, "kind")
 	object := mcputil.GetStringArg(args, "object")
 
-	if cluster == "" {
-		cluster = conf.KubernetesConfig.ClusterName
+	if clusterName == "" {
+		clusterName = conf.KubernetesConfig.ClusterName
 	}
 
 	gvk := schema.GroupVersionKind{Group: group, Version: version, Kind: kind}
@@ -327,9 +338,9 @@ func ensureCompleteCreateYAML(args map[string]interface{}, data string, ctx cont
 		return normalizeToYAML(data)
 	}
 
-	// Try to load existing object from cluster (same approach as PATCH preview)
+	// Try to load existing object from clusterName (same approach as PATCH preview)
 	var base map[string]interface{}
-	if details, err := businessLayer.IstioConfig.GetIstioConfigDetails(ctx, cluster, namespace, gvk, object); err == nil && details.Object != nil {
+	if details, err := businessLayer.IstioConfig.GetIstioConfigDetails(ctx, clusterName, namespace, gvk, object); err == nil && details.Object != nil {
 		// Object exists - use it as the base for merging LLM changes
 		u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(details.Object)
 		if err == nil {
