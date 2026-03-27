@@ -8,29 +8,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetCitations_MissingKeywords(t *testing.T) {
-	resp, err := CallMCPTool("get_citations", map[string]interface{}{})
+func TestGetReferencedDocs_MissingKeywords(t *testing.T) {
+	resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(t, string(resp.Body), "keywords")
 }
 
-func TestGetCitations_EmptyKeywords(t *testing.T) {
-	resp, err := CallMCPTool("get_citations", map[string]interface{}{"keywords": ""})
+func TestGetReferencedDocs_EmptyKeywords(t *testing.T) {
+	resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{"keywords": ""})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestGetCitations_WithKeywords(t *testing.T) {
-	resp, err := CallMCPTool("get_citations", map[string]interface{}{
+func TestGetReferencedDocs_WithKeywords(t *testing.T) {
+	resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{
 		"keywords": "mtls,security",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestGetCitations_InvalidDomain(t *testing.T) {
-	resp, err := CallMCPTool("get_citations", map[string]interface{}{
+func TestGetReferencedDocs_InvalidDomain(t *testing.T) {
+	resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{
 		"keywords": "mtls",
 		"domain":   "invalid_domain",
 	})
@@ -39,10 +39,10 @@ func TestGetCitations_InvalidDomain(t *testing.T) {
 	assert.Contains(t, string(resp.Body), "invalid domain")
 }
 
-func TestGetCitations_ValidDomains(t *testing.T) {
+func TestGetReferencedDocs_ValidDomains(t *testing.T) {
 	for _, domain := range []string{"kiali", "istio", "all"} {
 		t.Run(domain, func(t *testing.T) {
-			resp, err := CallMCPTool("get_citations", map[string]interface{}{
+			resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{
 				"keywords": "traffic",
 				"domain":   domain,
 			})
@@ -52,8 +52,8 @@ func TestGetCitations_ValidDomains(t *testing.T) {
 	}
 }
 
-func TestGetCitations_EmptyDomainDefaultsToAll(t *testing.T) {
-	resp, err := CallMCPTool("get_citations", map[string]interface{}{
+func TestGetReferencedDocs_EmptyDomainDefaultsToAll(t *testing.T) {
+	resp, err := CallMCPTool("get_referenced_docs", map[string]interface{}{
 		"keywords": "mtls",
 	})
 	require.NoError(t, err)
