@@ -149,7 +149,7 @@ func (in *WorkloadService) isWorkloadIncluded(workload string) bool {
 }
 
 // @TODO do validations per cluster
-func (in *WorkloadService) getWorkloadValidations(authpolicies []*security_v1.AuthorizationPolicy, workloadsPerNamespace map[string]models.Workloads, cluster string) models.IstioValidations {
+func (in *WorkloadService) getWorkloadValidations(ctx context.Context, authpolicies []*security_v1.AuthorizationPolicy, workloadsPerNamespace map[string]models.Workloads, cluster string) models.IstioValidations {
 	userClient, ok := in.userClients[cluster]
 	if !ok {
 		return models.IstioValidations{}
@@ -158,7 +158,20 @@ func (in *WorkloadService) getWorkloadValidations(authpolicies []*security_v1.Au
 	if !found {
 		return models.IstioValidations{}
 	}
-	validations := checkers.NewWorkloadChecker(authpolicies, cluster, in.conf, in.businessLayer.Mesh.discovery, namespaces, workloadsPerNamespace).Check()
+
+	mesh, err := in.businessLayer.Mesh.discovery.Mesh(ctx)
+	if err != nil || mesh == nil {
+		return models.IstioValidations{}
+	}
+
+	rootNamespaces := make(map[string]string, len(workloadsPerNamespace))
+	for ns := range workloadsPerNamespace {
+		if cp, err := mesh.ControlPlaneForNamespace(cluster, ns); err == nil && cp != nil {
+			rootNamespaces[ns] = cp.RootNamespace
+		}
+	}
+
+	validations := checkers.NewWorkloadChecker(authpolicies, cluster, in.conf, rootNamespaces, namespaces, workloadsPerNamespace).Check()
 
 	return validations
 }
@@ -397,7 +410,7 @@ func (in *WorkloadService) GetWorkloadList(ctx context.Context, criteria Workloa
 		authpolicies := istioConfigList.AuthorizationPolicies
 		allWorkloads := map[string]models.Workloads{}
 		allWorkloads[namespace] = ws
-		validations := in.getWorkloadValidations(authpolicies, allWorkloads, cluster)
+		validations := in.getWorkloadValidations(ctx, authpolicies, allWorkloads, cluster)
 		validations.StripIgnoredChecks(in.conf)
 		workloadList.Validations = workloadList.Validations.MergeValidations(validations)
 	}
