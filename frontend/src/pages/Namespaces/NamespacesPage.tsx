@@ -23,8 +23,8 @@ import { HistoryManager, URLParam } from '../../app/History';
 import * as API from '../../services/Api';
 import { sortFields, sortFunc } from './Sorts';
 import { availableFilters, nameFilter } from './Filters';
-import { Button, EmptyState, EmptyStateBody, EmptyStateVariant, Tooltip } from '@patternfly/react-core';
-import { ColumnsIcon, CubesIcon, SearchIcon } from '@patternfly/react-icons';
+import { EmptyState, EmptyStateBody, EmptyStateVariant } from '@patternfly/react-core';
+import { CubesIcon, SearchIcon } from '@patternfly/react-icons';
 import { isMultiCluster } from '../../config';
 import { addDanger } from '../../utils/AlertUtils';
 import { arrayEquals } from '../../utils/Common';
@@ -54,7 +54,10 @@ import { serverConfig } from '../../config';
 import { fetchClusterNamespacesHealth } from '../../services/NamespaceHealth';
 import { healthComputeDurationValidSeconds } from 'utils/HealthComputeDuration';
 import { config as virtualListConfig } from '../../components/VirtualList/Config';
-import { ColumnManagementModal, ColumnManagementModalColumn } from '@patternfly/react-component-groups';
+import {
+  ColumnManagementModalColumn,
+  ListColumnManagementModal
+} from '../../components/Filters/ListColumnManagementModal';
 import { ManagedColumn } from '../../components/VirtualList/ManagedColumnTypes';
 import { NamespacesListActions } from '../../actions/NamespacesListActions';
 
@@ -184,6 +187,20 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
     }
   }
 
+  componentDidUpdate(prevProps: NamespacesProps): void {
+    const refreshChanged =
+      this.props.lastRefreshAt !== prevProps.lastRefreshAt ||
+      (this.props.refreshInterval !== RefreshIntervalManual &&
+        (prevProps.navCollapse !== this.props.navCollapse ||
+          (prevProps.refreshInterval !== this.props.refreshInterval &&
+            (this.props.refreshInterval !== RefreshIntervalPause ||
+              prevProps.refreshInterval === RefreshIntervalManual))));
+
+    if (refreshChanged) {
+      this.load();
+    }
+  }
+
   private syncColumnsFromURL = (): void => {
     const defaultIds = this.getDefaultManagedColumns().map(c => c.id);
     const validIds = defaultIds.filter(id => id !== 'namespace');
@@ -225,7 +242,7 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
     return virtualListConfig.namespaces.columns
       .filter(c => c.title && c.title.trim().length > 0)
       .map(c => {
-        const id = c.title.toLowerCase();
+        const id = (c.id ?? c.name.toLowerCase()).toLowerCase();
         return {
           id,
           title: c.title,
@@ -253,7 +270,14 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
     }));
   };
 
-  /** Columns in the format expected by PatternFly ColumnManagementModal */
+  private resetNamespaceColumnsToDefault = (): void => {
+    this.props.dispatch(NamespacesListActions.setColumnOrder([]));
+    this.props.dispatch(NamespacesListActions.setHiddenColumns([]));
+    HistoryManager.deleteParam(URLParam.NAMESPACES_COLUMN_ORDER);
+    HistoryManager.deleteParam(URLParam.NAMESPACES_HIDDEN_COLUMNS);
+  };
+
+  /** Columns in the format expected by {@link ListColumnManagementModal} */
   private getAppliedColumnsForModal = (): ColumnManagementModalColumn[] => {
     return this.getManagedColumns().map(c => ({
       key: c.id,
@@ -263,20 +287,6 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
       isUntoggleable: c.id === 'namespace'
     }));
   };
-
-  componentDidUpdate(prevProps: NamespacesProps): void {
-    const refreshChanged =
-      this.props.lastRefreshAt !== prevProps.lastRefreshAt ||
-      (this.props.refreshInterval !== RefreshIntervalManual &&
-        (prevProps.navCollapse !== this.props.navCollapse ||
-          (prevProps.refreshInterval !== this.props.refreshInterval &&
-            (this.props.refreshInterval !== RefreshIntervalPause ||
-              prevProps.refreshInterval === RefreshIntervalManual))));
-
-    if (refreshChanged) {
-      this.load();
-    }
-  }
 
   componentWillUnmount(): void {
     this.promises.cancelAll();
@@ -1157,48 +1167,42 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
             type="namespaces"
           >
             <StatefulFilters
+              columnManagement={true}
+              columnManagementButtonTestId="namespaces-manage-columns"
               initialFilters={availableFilters}
+              onColumnManagementClick={() => this.setState({ showColumnManagement: true })}
               onFilterChange={this.onChange}
               ref={this.sFStatefulFilters}
-              rightToolbar={
-                <Tooltip content={t('Manage columns')}>
-                  <Button
-                    variant="plain"
-                    aria-label={t('Manage columns')}
-                    data-test="namespaces-manage-columns"
-                    onClick={() => this.setState({ showColumnManagement: true })}
-                  >
-                    <ColumnsIcon />
-                  </Button>
-                </Tooltip>
-              }
             />
           </VirtualList>
         </RenderContent>
 
-        <ColumnManagementModal
+        <ListColumnManagementModal
           appliedColumns={this.getAppliedColumnsForModal()}
           applyColumns={newColumns => {
-            const orderedIds = newColumns.map(c => c.key);
             const hiddenIds = newColumns.filter(c => !c.isShown).map(c => c.key);
+            const orderedIds = newColumns.map(c => c.key);
             this.props.dispatch(NamespacesListActions.setColumnOrder(orderedIds));
-            this.props.dispatch(NamespacesListActions.setHiddenColumns(hiddenIds));
             if (orderedIds.length > 0) {
               HistoryManager.setParam(URLParam.NAMESPACES_COLUMN_ORDER, orderedIds.join(','));
             } else {
               HistoryManager.deleteParam(URLParam.NAMESPACES_COLUMN_ORDER);
             }
+
+            this.props.dispatch(NamespacesListActions.setHiddenColumns(hiddenIds));
             if (hiddenIds.length > 0) {
               HistoryManager.setParam(URLParam.NAMESPACES_HIDDEN_COLUMNS, hiddenIds.join(','));
             } else {
               HistoryManager.deleteParam(URLParam.NAMESPACES_HIDDEN_COLUMNS);
             }
+
             this.setState({ showColumnManagement: false });
           }}
           description={t('Selected categories will be displayed in the table. Drag and drop to reorder columns.')}
           enableDragDrop={true}
           isOpen={this.state.showColumnManagement}
           onClose={() => this.setState({ showColumnManagement: false })}
+          onResetToDefault={this.resetNamespaceColumnsToDefault}
           title={t('Manage columns')}
         />
 
