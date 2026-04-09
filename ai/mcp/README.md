@@ -2,6 +2,29 @@
 
 This directory contains the Model Context Protocol (MCP) tools that enable the Kiali AI Assistant to interact with the service mesh, Kubernetes resources, and Istio configuration. These tools are called by the AI model to gather information, perform actions, and provide navigation capabilities.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Token Consumption](#token-consumption)
+- [Available Tools](#available-tools)
+  - [get_action_ui](#1-get_action_ui)
+  - [get_referenced_docs](#2-get_referenced_docs)
+  - [get_logs](#3-get_logs)
+  - [get_mesh_status](#4-get_mesh_status)
+  - [get_mesh_traffic_graph](#5-get_mesh_traffic_graph)
+  - [get_metrics](#6-get_metrics)
+  - [get_pod_performance](#7-get_pod_performance)
+  - [get_traces](#8-get_traces)
+  - [list_or_get_resources](#9-list_or_get_resources)
+  - [manage_istio_config_read](#10-manage_istio_config_read)
+  - [manage_istio_config](#11-manage_istio_config)
+- [Tool Definitions (YAML)](#tool-definitions-yaml)
+- [Tool Execution Flow](#tool-execution-flow)
+  - [ExcludedToolNames](#excludedtoolnames)
+- [Response Format](#response-format)
+- [Usage in AI Conversations](#usage-in-ai-conversations)
+- [Adding New Tools](#adding-new-tools)
+
 ## Overview
 
 MCP tools are functions that the AI can call to:
@@ -343,3 +366,51 @@ The AI model calls tools based on user queries:
 4. If the tool only emits UI actions/referenced_docs, add the name to `ExcludedToolNames`.
 
 See existing tools for end-to-end examples.
+
+
+# Token Consumption
+<!-- TOKENS-CONSUMPTION-START -->
+
+### Evaluation Summary
+
+| Metric | Value |
+|--------|-------|
+| Tasks Passed | 2/2 (100%) |
+| Assertions Pass Rate | 100% |
+| Total Tokens Estimate | 10029 |
+| MCP Schema Tokens | 3356 |
+
+### Per-Task Breakdown
+
+| Task | Tokens Estimate | MCP Schema Tokens | Passed |
+|------|----------------:|------------------:|--------|
+| get-namespaces | 7195 | 1678 | ✅ |
+| get-service-detail | 2834 | 1678 | ✅ |
+<!-- TOKENS-CONSUMPTION-END -->
+
+## MCP evaluation (CI)
+
+The repository runs [mcpchecker](https://github.com/mcpchecker/mcpchecker) in GitHub Actions against a Kind cluster with Istio and Kiali (`hack/run-integration-tests.sh` setup, MCP tools enabled). This is separate from unit/integration tests: it uses an LLM agent and costs API usage.
+
+### How to trigger the workflow
+
+1. **On a pull request** — Comment `/run-mcpchecker` on the PR. Only collaborators with **write** or **admin** permission on the repository can trigger it. When the run completes, the **mcpchecker MCP Evaluation - Report** workflow posts a results comment on the same PR.
+
+2. **Manually** — In GitHub: **Actions** → workflow **mcpchecker MCP Evaluation** → **Run workflow**. Pick the branch and optionally enable **verbose** output.
+
+### Requirements
+
+- Configure the **`GEMINI_API_KEY`** repository secret. Eval configuration lives under `tests/evals/` (for example `tests/evals/gemini/eval.yaml`).
+
+### Where it is defined
+
+| Piece | Location |
+|-------|----------|
+| Main workflow | `.github/workflows/mcpchecker.yml` |
+| PR results comment | `.github/workflows/mcpchecker-report.yml` |
+| Make targets (install, run eval, token summary) | `make/Makefile.mcp.mk` |
+
+### Token baseline
+
+Successful runs that are **not** tied to a PR comment trigger (for example a manual run on `master`) can update the committed token baseline via the **Update Token Baseline** job: it refreshes `ai/mcp/TOKEN_RESULTS.json` and the [Token Consumption](#token-consumption) section below (through `hack/mcp/update-token-readme.sh`) and may open an automated PR.
+
