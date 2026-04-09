@@ -438,8 +438,8 @@ func TestConvertToolToOpenAI_FromToolDefinition_ListOrGetResources(t *testing.T)
 	assert.Equal(t, expected, converted)
 }
 
-func TestConvertToolToOpenAI_FromToolDefinition_GetTraces(t *testing.T) {
-	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_traces.yaml"))
+func TestConvertToolToOpenAI_FromToolDefinition_ListTraces(t *testing.T) {
+	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "list_traces.yaml"))
 	require.NoError(t, err)
 
 	converted := convertToolToOpenAI(tool)
@@ -447,26 +447,26 @@ func TestConvertToolToOpenAI_FromToolDefinition_GetTraces(t *testing.T) {
 	expected := openai.ChatCompletionToolUnionParam{
 		OfFunction: &openai.ChatCompletionFunctionToolParam{
 			Function: openai.FunctionDefinitionParam{
-				Name:        "get_traces",
-				Description: openai.String("Fetches a distributed trace (Jaeger/Tempo) by trace_id or searches by service_name (optionally only error traces) and summarizes bottlenecks and error spans."),
+				Name:        "list_traces",
+				Description: openai.String("Lists distributed traces for a service in a namespace. Returns a summary (namespace, service, total_found, avg_duration_ms) and a list of traces with id, duration_ms, spans_count, root_op, slowest_service, has_errors. Use get_trace_details with a trace id to get full hierarchy."),
 				Parameters: openai.FunctionParameters{
 					"type": "object",
+					"required": []interface{}{
+						"namespace",
+						"serviceName",
+					},
 					"properties": map[string]interface{}{
-						"traceId": map[string]interface{}{
-							"type":        "string",
-							"description": "Trace ID to fetch and summarize. If provided, namespace/service_name are ignored.",
-						},
 						"namespace": map[string]interface{}{
 							"type":        "string",
-							"description": "Kubernetes namespace of the service (required when trace_id is not provided).",
+							"description": "Kubernetes namespace of the service (required).",
 						},
 						"serviceName": map[string]interface{}{
 							"type":        "string",
-							"description": "Service name to search traces for (required when trace_id is not provided).",
+							"description": "Service name to search traces for (required). Returns multiple traces up to limit.",
 						},
 						"errorOnly": map[string]interface{}{
 							"type":        "boolean",
-							"description": "If true, only consider traces that contain errors (e.g. error=true / non-200 status). Default false.",
+							"description": "If true, only consider traces that contain errors. Default false.",
 						},
 						"clusterName": map[string]interface{}{
 							"type":        "string",
@@ -474,15 +474,11 @@ func TestConvertToolToOpenAI_FromToolDefinition_GetTraces(t *testing.T) {
 						},
 						"lookbackSeconds": map[string]interface{}{
 							"type":        "integer",
-							"description": "How far back to search when using service_name. Default 600 (10m).",
+							"description": "How far back to search. Default 600 (10m).",
 						},
 						"limit": map[string]interface{}{
 							"type":        "integer",
-							"description": "Max number of traces to consider when searching by service_name. Default 10.",
-						},
-						"maxSpans": map[string]interface{}{
-							"type":        "integer",
-							"description": "Max number of spans to return in each summary section (bottlenecks, errors, roots). Default 7.",
+							"description": "Maximum number of traces to return. Default 10.",
 						},
 					},
 				},

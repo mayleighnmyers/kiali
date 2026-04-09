@@ -311,8 +311,8 @@ func TestConvertToolToGoogle_FromToolDefinition_ListOrGetResources(t *testing.T)
 	assert.Equal(t, expected, converted)
 }
 
-func TestConvertToolToGoogle_FromToolDefinition_GetTraces(t *testing.T) {
-	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_traces.yaml"))
+func TestConvertToolToGoogle_FromToolDefinition_ListTraces(t *testing.T) {
+	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "list_traces.yaml"))
 	require.NoError(t, err)
 
 	converted := mapToGenAISchema(tool.GetDefinition())
@@ -320,21 +320,17 @@ func TestConvertToolToGoogle_FromToolDefinition_GetTraces(t *testing.T) {
 	expected := &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
-			"traceId": {
-				Type:        genai.TypeString,
-				Description: "Trace ID to fetch and summarize. If provided, namespace/service_name are ignored.",
-			},
 			"namespace": {
 				Type:        genai.TypeString,
-				Description: "Kubernetes namespace of the service (required when trace_id is not provided).",
+				Description: "Kubernetes namespace of the service (required).",
 			},
 			"serviceName": {
 				Type:        genai.TypeString,
-				Description: "Service name to search traces for (required when trace_id is not provided).",
+				Description: "Service name to search traces for (required). Returns multiple traces up to limit.",
 			},
 			"errorOnly": {
 				Type:        genai.TypeBoolean,
-				Description: "If true, only consider traces that contain errors (e.g. error=true / non-200 status). Default false.",
+				Description: "If true, only consider traces that contain errors. Default false.",
 			},
 			"clusterName": {
 				Type:        genai.TypeString,
@@ -342,17 +338,14 @@ func TestConvertToolToGoogle_FromToolDefinition_GetTraces(t *testing.T) {
 			},
 			"lookbackSeconds": {
 				Type:        genai.TypeInteger,
-				Description: "How far back to search when using service_name. Default 600 (10m).",
+				Description: "How far back to search. Default 600 (10m).",
 			},
 			"limit": {
 				Type:        genai.TypeInteger,
-				Description: "Max number of traces to consider when searching by service_name. Default 10.",
-			},
-			"maxSpans": {
-				Type:        genai.TypeInteger,
-				Description: "Max number of spans to return in each summary section (bottlenecks, errors, roots). Default 7.",
+				Description: "Maximum number of traces to return. Default 10.",
 			},
 		},
+		Required: []string{"namespace", "serviceName"},
 	}
 
 	assert.Equal(t, expected, converted)
