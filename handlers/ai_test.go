@@ -165,9 +165,9 @@ func TestChatMCP_ConcurrentRequests(t *testing.T) {
 	statusCodes := make(chan int, numRequests)
 
 	// Alternate between tools and header to exercise concurrent reads from both handler maps:
-	// - get_referenced_docs (no header): uses MCPToolHandlers, returns 200
-	// - get_action_ui (no header): uses MCPToolHandlers, returns 200
-	// - get_referenced_docs + kiali_chatbot header: uses DefaultToolHandlers, tool not in default → 404
+	// - get_referenced_docs (no header): MCPToolHandlers
+	// - get_action_ui (no header): MCPToolHandlers
+	// - get_referenced_docs + HeaderKialiUI: DefaultToolHandlers (200 if the tool is also in default)
 	for i := 0; i < numRequests; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -175,7 +175,7 @@ func TestChatMCP_ConcurrentRequests(t *testing.T) {
 
 			var tool string
 			var body map[string]interface{}
-			withChatbotHeader := false
+			withKialiUIHeader := false
 			switch i % 3 {
 			case 0:
 				tool = "get_referenced_docs"
@@ -186,7 +186,7 @@ func TestChatMCP_ConcurrentRequests(t *testing.T) {
 			default:
 				tool = "get_referenced_docs"
 				body = map[string]interface{}{"keywords": "istio"}
-				withChatbotHeader = true
+				withKialiUIHeader = true
 			}
 
 			bodyBytes, err := json.Marshal(body)
@@ -200,8 +200,8 @@ func TestChatMCP_ConcurrentRequests(t *testing.T) {
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
-			if withChatbotHeader {
-				req.Header.Set("kiali_chatbot", "true")
+			if withKialiUIHeader {
+				req.Header.Set(mcp.HeaderKialiUI, "true")
 			}
 
 			resp, err := ts.Client().Do(req)
@@ -231,7 +231,7 @@ func TestChatMCP_ConcurrentRequests(t *testing.T) {
 	}
 
 	// Concurrent access to handler and tool maps: we must see 200s (MCP tools). We may also see 404s
-	// when kiali_chatbot header is set (get_referenced_docs not in default), depending on env.
+	// when HeaderKialiUI is set but the tool is not registered in DefaultToolHandlers.
 	require.Greater(got200, 0, "expected some 200 responses from concurrent MCP tool calls")
 	require.Equal(numRequests, got200+got404, "all responses should be 200 or 404 (no 500/panic)")
 }
@@ -256,7 +256,7 @@ func TestChatMCP_LoadToolsOnFirstRequest(t *testing.T) {
 	assert.Greater(t, len(mcp.DefaultToolHandlers), 0, "Default (chatbot) toolset should be loaded")
 }
 
-func TestChatMCP_UsesDefaultHandlersWhenKialiChatbotHeaderSet(t *testing.T) {
+func TestChatMCP_UsesDefaultHandlersWhenKialiUIHeaderSet(t *testing.T) {
 	require := require.New(t)
 	require.NoError(mcp.LoadTools())
 
@@ -266,8 +266,8 @@ func TestChatMCP_UsesDefaultHandlersWhenKialiChatbotHeaderSet(t *testing.T) {
 	ts := httptest.NewServer(mr)
 	t.Cleanup(ts.Close)
 
-	// Tool with toolset: [mcp] only (e.g. get_referenced_docs) is in MCPToolHandlers but not in DefaultToolHandlers.
-	// Without header: should be found (MCPToolHandlers). With header kiali_chatbot: should be 404 (DefaultToolHandlers).
+	// Tool with toolset: [mcp] only is in MCPToolHandlers but not in DefaultToolHandlers.
+	// Without header: found via MCPToolHandlers. With HeaderKialiUI: 404 via DefaultToolHandlers.
 	excludedTool := "get_referenced_docs"
 	if _, inDefault := mcp.DefaultToolHandlers[excludedTool]; inDefault {
 		t.Skipf("%s is in DefaultToolHandlers, cannot test header subset behavior", excludedTool)
@@ -281,17 +281,128 @@ func TestChatMCP_UsesDefaultHandlersWhenKialiChatbotHeaderSet(t *testing.T) {
 	resp, err := ts.Client().Do(req)
 	require.NoError(err)
 	t.Cleanup(func() { resp.Body.Close() })
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "Without kiali_chatbot header, tool should be found (MCPToolHandlers)")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "Without HeaderKialiUI, tool should be found (MCPToolHandlers)")
 
 	body2 := bytes.NewBufferString(`{}`)
 	req2, err := http.NewRequest(http.MethodPost, ts.URL+"/api/chat/mcp/"+excludedTool, body2)
 	require.NoError(err)
 	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("kiali_chatbot", "true")
+	req2.Header.Set(mcp.HeaderKialiUI, "true")
 	resp2, err := ts.Client().Do(req2)
 	require.NoError(err)
 	t.Cleanup(func() { resp2.Body.Close() })
-	assert.Equal(t, http.StatusNotFound, resp2.StatusCode, "With kiali_chatbot header, tool should not be found (DefaultToolHandlers)")
+	assert.Equal(t, http.StatusNotFound, resp2.StatusCode, "With HeaderKialiUI, tool should not be found when absent from DefaultToolHandlers")
+}
+
+func TestChatMCP_ResponseFormatDiffersByMCPMode(t *testing.T) {
+	require := require.New(t)
+	require.NoError(mcp.LoadTools())
+
+	// Create a custom setup with a fake namespace so manage_istio_config can validate it
+	conf := config.NewConfig()
+	k8s := kubetest.NewFakeK8sClient(kubetest.FakeNamespace("bookinfo"))
+	cf := kubetest.NewFakeClientFactoryWithClient(conf, k8s)
+	kialiCache := cache.NewTestingCacheWithFactory(t, cf, *conf)
+	discovery := istio.NewDiscovery(cf.GetSAClients(), kialiCache, conf)
+	prom := &prometheustest.PromClientMock{}
+	grafanaSvc := grafana.NewService(conf, cf.GetSAHomeClusterClient())
+	persesSvc := perses.NewService(conf, cf.GetSAHomeClusterClient())
+	cpm := &business.FakeControlPlaneMonitor{}
+	traceLoader := &tracingtest.TracingClientMock{}
+
+	handler := ChatMCP(
+		conf,
+		kialiCache,
+		nil, // aiStore
+		cf,
+		prom,
+		cpm,
+		func() tracing.ClientInterface { return traceLoader },
+		grafanaSvc,
+		persesSvc,
+		discovery,
+	)
+	handler = WithFakeAuthInfo(conf, handler)
+
+	mr := mux.NewRouter()
+	mr.Handle("/api/chat/mcp/{tool_name}", handler)
+	ts := httptest.NewServer(mr)
+	t.Cleanup(ts.Close)
+
+	// Use manage_istio_config which is in both toolsets and formats responses based on mcp_mode.
+	tool := "manage_istio_config"
+	require.Contains(mcp.MCPToolHandlers, tool, "tool should exist in MCPToolHandlers")
+	require.Contains(mcp.DefaultToolHandlers, tool, "tool should exist in DefaultToolHandlers")
+
+	// Minimal request body for create preview (confirmed: false).
+	// This will trigger the preview flow that returns different formats based on mcp_mode.
+	// Use "bookinfo" namespace which exists in our fake k8s client.
+	requestBody := `{
+		"action": "create",
+		"confirmed": false,
+		"namespace": "bookinfo",
+		"group": "networking.istio.io",
+		"version": "v1",
+		"kind": "VirtualService",
+		"object": "test-vs",
+		"data": "{\"apiVersion\":\"networking.istio.io/v1\",\"kind\":\"VirtualService\",\"metadata\":{\"name\":\"test-vs\",\"namespace\":\"bookinfo\"},\"spec\":{\"hosts\":[\"test.example.com\"]}}"
+	}`
+
+	// Test 1: Without Kiali-UI header (MCP mode) - response should be direct result, no actions wrapper
+	req1, err := http.NewRequest(http.MethodPost, ts.URL+"/api/chat/mcp/"+tool, bytes.NewBufferString(requestBody))
+	require.NoError(err)
+	req1.Header.Set("Content-Type", "application/json")
+	resp1, err := ts.Client().Do(req1)
+	require.NoError(err)
+	t.Cleanup(func() { resp1.Body.Close() })
+
+	var mcpResponse interface{}
+	require.NoError(json.NewDecoder(resp1.Body).Decode(&mcpResponse))
+
+	// In MCP mode (mcp_mode=true), manage_istio_config returns the result directly without wrapping.
+	// Even with confirmed=false, MCP mode executes directly (no preview flow).
+	// The response should be a string (direct result), not a structured object with "actions".
+	mcpResponseStr, isMCPString := mcpResponse.(string)
+	if isMCPString {
+		assert.NotEmpty(t, mcpResponseStr, "MCP mode should return non-empty result string")
+	} else {
+		// If it's a map (shouldn't be for MCP mode), verify it does NOT have "actions"
+		mcpResponseMap, _ := mcpResponse.(map[string]interface{})
+		_, hasActions := mcpResponseMap["actions"]
+		assert.False(t, hasActions, "MCP mode response should not contain 'actions' field")
+	}
+
+	// Test 2: With Kiali-UI header (UI mode) - response should have actions array and result fields
+	req2, err := http.NewRequest(http.MethodPost, ts.URL+"/api/chat/mcp/"+tool, bytes.NewBufferString(requestBody))
+	require.NoError(err)
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set(mcp.HeaderKialiUI, "true")
+	resp2, err := ts.Client().Do(req2)
+	require.NoError(err)
+	t.Cleanup(func() { resp2.Body.Close() })
+
+	var uiResponse map[string]interface{}
+	require.NoError(json.NewDecoder(resp2.Body).Decode(&uiResponse))
+
+	// In UI mode (mcp_mode=false), manage_istio_config wraps the response with actions and result.
+	assert.Contains(t, uiResponse, "actions", "UI mode response should contain 'actions' field")
+	assert.Contains(t, uiResponse, "result", "UI mode response should contain 'result' field")
+
+	// Verify actions is an array
+	actions, ok := uiResponse["actions"].([]interface{})
+	assert.True(t, ok, "actions field should be an array")
+	assert.Greater(t, len(actions), 0, "actions array should not be empty")
+
+	// Verify the first action has expected fields (kind: file, fileName, payload)
+	if len(actions) > 0 {
+		firstAction, ok := actions[0].(map[string]interface{})
+		assert.True(t, ok, "first action should be a map")
+		if ok {
+			assert.Equal(t, "file", firstAction["kind"], "action kind should be 'file'")
+			assert.Contains(t, firstAction, "fileName", "action should have fileName")
+			assert.Contains(t, firstAction, "payload", "action should have payload")
+		}
+	}
 }
 
 // ========================================================================
