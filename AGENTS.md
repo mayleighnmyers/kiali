@@ -296,6 +296,492 @@ make -e KIALI_PROXY_URL=http://localhost:20001/kiali yarn-start
 make cypress-gui
 ```
 
+### Integration Tests via `hack/run-integration-tests.sh`
+
+The `hack/run-integration-tests.sh` script is the main entrypoint for setting up clusters and running end-to-end integration tests. It can create a KinD cluster, install Istio, deploy demo apps, deploy Kiali, and run the test suite — all in one command.
+
+#### Prerequisites
+
+- `kind` and `docker` installed
+- `make build` (kiali binary required for `local` and `offline` suites)
+- `make build-ui` (Cypress must be installed for all frontend suites)
+
+#### Basic Usage
+
+```bash
+# Full run: setup cluster + run tests
+hack/run-integration-tests.sh --test-suite <suite>
+
+# Setup only (create cluster, install Istio, deploy apps, skip tests)
+hack/run-integration-tests.sh --test-suite <suite> --setup-only true
+
+# Tests only (skip setup, run against existing cluster)
+hack/run-integration-tests.sh --test-suite <suite> --tests-only true
+```
+
+#### Available Test Suites (`--test-suite`)
+
+| Suite | Description |
+|-------|-------------|
+| `backend` | Go backend integration tests (default) |
+| `backend-external-controlplane` | Backend tests with external control plane |
+| `frontend` | All frontend Cypress tests |
+| `frontend-core-1` | Frontend core test group 1 |
+| `frontend-core-2` | Frontend core test group 2 |
+| `frontend-core-optional` | CRD validation and Perses tests |
+| `frontend-ambient` | Frontend tests with Istio ambient mode |
+| `frontend-primary-remote` | Frontend multicluster primary-remote tests |
+| `frontend-multi-primary` | Frontend multicluster multi-primary tests |
+| `frontend-multi-mesh` | Frontend multi-mesh tests |
+| `frontend-external-kiali` | Frontend tests with external Kiali |
+| `frontend-tempo` | Frontend tracing tests with Tempo |
+| `local` | Runs Kiali locally (not in-cluster) with smoke Cypress tests |
+| `offline` | Runs Kiali in offline mode with must-gather data |
+
+#### The `local` Suite (Recommended for Local Development)
+
+The `local` suite is useful for testing local code changes without building container images. It:
+
+1. Creates a KinD cluster with Istio (via Sail) but **does not deploy Kiali in-cluster**
+2. Installs demo applications (bookinfo, error rates, etc.)
+3. Runs the Kiali binary directly from `$GOPATH/bin/kiali`
+4. Executes the `cypress:run:smoke` test suite against the locally-running Kiali
+
+```bash
+# Step 1: Build the kiali binary and frontend
+make build-ui build
+
+# Step 2: Setup cluster only (takes ~5 minutes)
+hack/run-integration-tests.sh --test-suite local --setup-only true
+
+# Step 3: Run tests against existing cluster (repeatable after code changes)
+make build  # Rebuild after code changes
+hack/run-integration-tests.sh --test-suite local --tests-only true
+```
+
+#### Running Individual Cypress Tests
+
+After setting up a cluster with `--setup-only true`, you can start Kiali locally and run specific tests interactively. This is the recommended workflow for writing and debugging individual e2e tests.
+
+**Step 1: Start Kiali locally**
+
+```bash
+# Start Kiali binary locally (uses anonymous auth, port-forwards to in-cluster services)
+$(go env GOPATH)/bin/kiali \
+  -c hack/ci-yaml/ci-test-config-no-cache.yaml run \
+  --cluster-name-overrides kind-ci=cluster-default \
+  --port-forward-tracing --enable-tracing \
+  --port-forward-prom --port-forward-grafana --no-browser
+```
+
+Kiali will be available at `http://localhost:20001`.
+
+**Step 2: Run specific tests**
+
+Tests use Gherkin `.feature` files with `@tags` for grouping. Tests are in `frontend/cypress/integration/featureFiles/` with step definitions in `frontend/cypress/integration/common/`.
+
+```bash
+cd frontend
+
+# Run a specific test tag
+yarn cypress run -e TAGS="@smoke"
+yarn cypress run -e TAGS="@core-1"
+yarn cypress run -e TAGS="@core-2"
+
+# Run a specific feature file
+npx cypress run --spec "cypress/integration/featureFiles/services.feature"
+
+# Run a specific feature file with a specific tag
+npx cypress run --spec "cypress/integration/featureFiles/services.feature" -e TAGS="@smoke"
+
+# Open Cypress GUI to pick tests interactively
+yarn cypress open -e TAGS="@core-1"
+
+# Use make targets
+make cypress-gui        # Opens GUI with core tests
+make cypress-run        # Headless core tests
+make cypress-selected   # Runs @selected tagged tests (tag a scenario with @selected for debugging)
+```
+
+**Available test tags:**
+
+| Tag | Description | Suite |
+|-----|-------------|-------|
+| `@smoke` | Quick smoke tests (~30 scenarios) | `local` |
+| `@core-1` | Core UI tests group 1 (~130 scenarios) | `frontend-core-1` |
+| `@core-2` | Core UI tests group 2 (~155 scenarios) | `frontend-core-2` |
+| `@crd-validation` | CRD validation tests | `frontend-core-optional` |
+| `@perses` | Perses dashboard tests | `frontend-core-optional` |
+| `@multi-cluster` | Primary-remote multicluster tests | `frontend-primary-remote` |
+| `@multi-primary` | Multi-primary multicluster tests | `frontend-multi-primary` |
+| `@multi-mesh` | Multi-mesh tests | `frontend-multi-mesh` |
+| `@ambient` | Ambient mesh tests | `frontend-ambient` |
+| `@tracing` | Distributed tracing (Tempo) tests | `frontend-tempo` |
+| `@offline` | Offline mode tests | `offline` |
+| `@selected` | Manual selection for debugging | N/A |
+
+**Tip:** To debug a single scenario, add the `@selected` tag to it in the `.feature` file, then run `make cypress-selected`.
+
+#### Debugging Cypress Tests with Playwright MCP
+
+AI agents can connect to the actual Cypress-controlled Chrome browser via the Chrome DevTools Protocol (CDP) to inspect the test runner and the application under test.
+
+**Setup: `.mcp.json`**
+
+The project includes a `.mcp.json` at the repo root with a `cypress-debugger` MCP server that connects to the Cypress Chrome browser on port 9222:
+
+```json
+{
+  "mcpServers": {
+    "cypress-debugger": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "http://127.0.0.1:9222"]
+    }
+  }
+}
+```
+
+This is already checked into the repository — no manual setup is needed. The `cypress-debugger` MCP tools (e.g., `mcp__cypress-debugger__browser_snapshot`, `mcp__cypress-debugger__browser_click`) become available automatically when Claude Code loads the project.
+
+**Prerequisites:**
+
+Before using the debug browser, ensure:
+1. **Chrome is installed** — `--browser chrome` requires a Chrome/Chromium binary on the system
+2. **A cluster with Istio and demo apps is running** — check with `kind get clusters` (look for `ci`)
+3. **Kiali is running locally** — check with `curl -s http://localhost:20001/kiali/api`
+
+If the cluster doesn't exist yet, set it up:
+```bash
+make build-ui build
+hack/run-integration-tests.sh --test-suite local --setup-only true
+```
+
+If Kiali isn't running, start it:
+```bash
+$(go env GOPATH)/bin/kiali \
+  -c hack/ci-yaml/ci-test-config-no-cache.yaml run \
+  --cluster-name-overrides kind-ci=cluster-default \
+  --port-forward-tracing --enable-tracing \
+  --port-forward-prom --port-forward-grafana --no-browser
+```
+
+**Step 1: Run Cypress with Chrome on a fixed CDP port**
+
+```bash
+cd frontend
+
+# Run a specific test with Chrome, keep the browser open after completion
+CYPRESS_BASE_URL=http://localhost:20001 \
+CYPRESS_REMOTE_DEBUGGING_PORT=9222 \
+npx cypress run \
+  --browser chrome \
+  --headed \
+  --no-exit \
+  -e TAGS="@smoke" \
+  --spec "cypress/integration/featureFiles/kiali_about.feature"
+```
+
+Key flags:
+- `CYPRESS_REMOTE_DEBUGGING_PORT=9222` — exposes the Chrome browser on a fixed CDP port so the `cypress-debugger` MCP can connect
+- `--browser chrome` — uses Chrome instead of Electron (required for CDP)
+- `--headed` — shows the browser window
+- `--no-exit` — keeps the browser open after tests finish so you can inspect the state
+
+**Step 2: Use the `cypress-debugger` MCP to inspect the browser**
+
+Once Cypress is running with the Chrome browser on port 9222, the `cypress-debugger` MCP tools (`mcp__cypress-debugger__browser_snapshot`, `mcp__cypress-debugger__browser_click`, etc.) connect directly to the Cypress Chrome instance. This lets AI agents:
+
+- **Inspect the Cypress test runner** — see test results, passed/failed steps, and error messages
+- **Inspect the app under test** — the Kiali UI is rendered inside the Cypress runner; snapshots show the actual DOM state
+- **Debug failing assertions** — read the Cypress step definition (in `frontend/cypress/integration/common/*.ts`), understand what DOM selector it uses (e.g., `td[data-label="Details"]`, `data-test="namespace-dropdown"`), and use `browser_evaluate` to run the same query against the live page
+- **Re-run tests** — press `Ctrl+R` via `browser_press_key` to re-run the current spec (see below)
+- **Verify the CDP endpoint** is reachable: `curl -s http://127.0.0.1:9222/json/list`
+
+**Re-running tests from MCP:**
+
+To re-run a Cypress spec via the MCP tools, press `Ctrl+R`:
+
+```
+browser_press_key({ key: "Control+r" })
+```
+
+This reloads the Cypress runner page which triggers a full re-run of the current spec. To verify a re-run occurred, take a `browser_snapshot` and check that iframe element ref prefixes changed (e.g., `f1e*` → `f3e*`) and timestamps in the Kiali UI updated to the current time.
+
+> **Note:** Pressing just `r` via `browser_press_key` does not work because focus isn't on the Cypress runner. Clicking the spec file link and using `browser_navigate` to the same URL also do not trigger re-runs. Use `Ctrl+R` or `browser_evaluate` with `window.location.reload()`.
+
+> **Important: `Ctrl+R` does NOT pick up code changes.** Cypress caches compiled step definitions and feature files. If you modify a `.ts` step definition or `.feature` file, you **must kill the Cypress process and restart it** for the changes to take effect. `Ctrl+R` only re-runs the previously compiled spec. To restart cleanly:
+> 1. Kill all Cypress and associated Chrome processes: `pkill -9 -f cypress; pkill -9 -f "chrome.*9222"`
+> 2. Wait 2-3 seconds for ports to be released
+> 3. Verify port 9222 is free: `curl -s http://127.0.0.1:9222/json/list` should fail
+> 4. Re-launch Cypress with the same command
+> 5. After the new browser opens, use `browser_close` then `browser_navigate` to reconnect the MCP to the new browser instance (the MCP caches its connection to the old browser)
+
+**Snapshot depth tips:**
+
+The `browser_snapshot` tool accepts an optional `depth` parameter to control output size:
+- `depth: 3-4` — quick overview of page structure and test runner controls
+- `depth: 5-6` — detailed view including the Kiali app inside the iframe
+- No depth limit (default) — full DOM tree; can be very large (50KB+), useful for detailed inspection
+
+**Understanding the snapshot structure:**
+
+The Cypress runner page has two main areas:
+- **Test runner panel** (left side) — element refs like `e13`, `e17`, etc. Contains the spec name, pass/fail stats, test steps, and timing
+- **App under test iframe** (right side) — element refs like `f1e3`, `f1e7`, etc. (prefixed with `f<N>e`). Contains the actual Kiali UI being tested. Use these refs to interact with the Kiali app directly
+
+**Reading test runner state via `browser_evaluate`:**
+
+Snapshots can be noisy. Use `browser_evaluate` for quick, targeted checks:
+
+```javascript
+// Check pass/fail/pending counts
+() => { const stats = document.querySelectorAll('[aria-label="Stats"] li'); return Array.from(stats).map(s => s.textContent?.trim()); }
+// → ["Passed:1", "Failed:--", "Pending:--"]
+
+// Check last N Cypress command log entries (most useful for debugging)
+() => { const items = document.querySelectorAll('.command-wrapper'); return Array.from(items).slice(-10).map(el => el.textContent?.trim()).join('\n'); }
+
+// Check for error messages
+() => { const el = document.querySelector('.runnable-err-message'); return el ? el.textContent : 'no error'; }
+
+// Inspect the Kiali app DOM inside the iframe
+() => { const iframe = document.querySelector('iframe'); if (!iframe?.contentDocument) return 'no iframe'; return iframe.contentDocument.querySelector('#target-panel-control-plane')?.textContent?.substring(0, 200); }
+```
+
+**Understanding Cypress test structure:**
+
+- Feature files: `frontend/cypress/integration/featureFiles/*.feature` (Gherkin BDD with `@tags`)
+- Step definitions: `frontend/cypress/integration/common/*.ts` (TypeScript implementing each Given/When/Then)
+- Key selectors used in tests:
+  - `cy.getBySel('namespace-dropdown')` → `[data-test="namespace-dropdown"]`
+  - `cy.get('th[data-label="Name"]')` → table column headers
+  - `cy.get('td[data-label="Details"]')` → table column cells
+  - `getColWithRowText(rowText, colName)` → finds a cell by row content and column name
+  - `a[href$="..."]` → link assertions using endsWith
+
+#### Debugging CI Test Failures Locally
+
+Use the `gh` CLI to identify failures from CI, then reproduce locally.
+
+**Step 1: Find the failed CI job**
+
+```bash
+# List recent failed Kiali CI runs
+gh run list --repo kiali/kiali --status failure --limit 10 \
+  --json databaseId,name,headBranch,createdAt \
+  --jq '.[] | select(.name == "Kiali CI") | {id: .databaseId, branch: .headBranch, date: .createdAt}'
+
+# Or given a specific run URL (https://github.com/kiali/kiali/actions/runs/<RUN_ID>):
+gh run view <RUN_ID> --repo kiali/kiali --json jobs \
+  --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, id: .databaseId}'
+```
+
+**Step 2: Extract failure details from logs**
+
+```bash
+# Get the failing test names and error messages
+gh run view <RUN_ID> --repo kiali/kiali --log --job <JOB_ID> 2>&1 \
+  | grep -E "(failing|AssertionError|CypressError|Error:)" | head -20
+
+# Get context around failures (test name + error)
+gh run view <RUN_ID> --repo kiali/kiali --log --job <JOB_ID> 2>&1 \
+  | grep -B5 "AssertionError" | head -40
+```
+
+**Step 3: Download failure screenshots**
+
+Cypress takes screenshots on failure and uploads them as artifacts.
+
+```bash
+# Download all cypress screenshots from the run
+gh run download <RUN_ID> --repo kiali/kiali --dir /tmp/ci-artifacts --pattern "*cypress*"
+
+# View the screenshots to understand the failure visually
+# Screenshots are at: /tmp/ci-artifacts/cypress-screenshots-*/
+```
+
+The screenshots show the Cypress test runner (left) with the failing step highlighted, and the Kiali UI (right) showing the actual state at the time of failure.
+
+**Step 4: Identify the test suite and feature file**
+
+Map the failed job name to a test suite:
+
+| CI Job Name Pattern | Test Suite | Feature Files |
+|---------------------|------------|---------------|
+| `Run frontend core 1 integration tests` | `frontend-core-1` | `@core-1` tagged scenarios |
+| `Run frontend core 2 integration tests` | `frontend-core-2` | `@core-2` tagged scenarios |
+| `Run Ambient frontend integration tests` | `frontend-ambient` | `@ambient`, `@waypoint` scenarios |
+| `Run frontend multicluster multi-primary` | `frontend-multi-primary` | `@multi-primary` scenarios |
+| `Run frontend multicluster primary-remote` | `frontend-primary-remote` | `@multi-cluster` scenarios |
+| `Run frontend local and offline mode` | `local` / `offline` | `@smoke` / `@offline` scenarios |
+| `Run backend integration tests` | `backend` | Go tests in `tests/integration/` |
+
+**Step 5: Reproduce locally**
+
+```bash
+# Checkout the failing branch
+git checkout <branch-name>
+
+# Build
+make build-ui build
+
+# Setup cluster for the correct suite (if not already running)
+hack/run-integration-tests.sh --test-suite <suite> --setup-only true
+
+# Start Kiali (if not already running)
+$(go env GOPATH)/bin/kiali \
+  -c hack/ci-yaml/ci-test-config-no-cache.yaml run \
+  --cluster-name-overrides kind-ci=cluster-default \
+  --port-forward-tracing --enable-tracing \
+  --port-forward-prom --port-forward-grafana --no-browser &
+
+# Run just the failing test with debug browser
+cd frontend
+CYPRESS_BASE_URL=http://localhost:20001 \
+CYPRESS_REMOTE_DEBUGGING_PORT=9222 \
+npx cypress run --browser chrome --headed --no-exit \
+  --spec "cypress/integration/featureFiles/<failing-feature>.feature"
+```
+
+**Step 6: Debug with Playwright MCP**
+
+With the Cypress browser on port 9222 and `--no-exit` keeping it open, use `cypress-debugger` MCP tools to inspect the Cypress Chrome browser, examine the DOM state, and understand why the assertion failed. Use `Ctrl+R` to re-run the test after making fixes. See [Debugging Cypress Tests with Playwright MCP](#debugging-cypress-tests-with-playwright-mcp) for full details.
+
+#### Writing New E2E Tests
+
+AI agents can write new Cypress e2e tests, run them against a local cluster, and iterate until they pass.
+
+**Test file structure:**
+
+Tests use Gherkin BDD (`.feature` files) paired with TypeScript step definitions:
+
+```
+frontend/cypress/integration/
+├── featureFiles/           # Gherkin .feature files (scenarios with @tags)
+│   ├── services.feature
+│   ├── app_details.feature
+│   └── ...
+└── common/                 # TypeScript step definitions (shared across features)
+    ├── table.ts            # Reusable table assertions (getColWithRowText, colExists, etc.)
+    ├── navigation.ts       # Page navigation steps ("user is at the X page")
+    ├── transition.ts       # Loading state helpers (ensureKialiFinishedLoading)
+    ├── services.ts         # Service-specific steps
+    ├── hooks.ts            # Before/After hooks for demo app setup
+    └── ...
+```
+
+Step definitions are **global** — any `.ts` file in `cypress/integration/` is loaded for all feature files (configured via `"stepDefinitions": "cypress/integration/**/*.{js,ts}"` in `package.json`). This means steps defined in `table.ts` or `navigation.ts` are available to every feature file.
+
+**Writing a new test — step by step:**
+
+1. **Choose the right feature file** — add scenarios to an existing `.feature` file if the feature area matches. Only create a new file for an entirely new feature area.
+
+2. **Tag the scenario** — use the appropriate tag(s) for the test suite it belongs to:
+   ```gherkin
+   @bookinfo-app
+   @core-2
+   Scenario: My new test scenario
+     Given user is at administrator perspective
+     And user is at the "services" page
+     When user selects the "bookinfo" namespace
+     Then user sees "productpage" in the table
+   ```
+   - `@bookinfo-app`, `@error-rates-app`, `@sleep-app` — hooks use these to ensure demo apps are installed
+   - `@core-1`, `@core-2`, `@smoke` — which CI suite runs this test
+   - Use `@selected` temporarily during development to run only your test
+
+3. **Reuse existing step definitions** — check what's already available before writing new steps:
+   - `navigation.ts`: `user is at the {string} page`, `user is at administrator perspective`
+   - `table.ts`: `user selects the {string} namespace`, `user sees {string} in the table`, `table length should be {int}`, `the {string} column on the {string} row has a link ending in {string}`
+   - `transition.ts`: `ensureKialiFinishedLoading()` — wait for loading spinners to disappear
+   - `services.ts`, `apps.ts`, `workloads.ts` — domain-specific steps
+
+4. **Write new step definitions** if needed — add them to the appropriate file in `cypress/integration/common/`:
+   ```typescript
+   import { Then, When } from '@badeball/cypress-cucumber-preprocessor';
+   import { ensureKialiFinishedLoading } from './transition';
+
+   Then('the service details page shows {string}', (expectedText: string) => {
+     cy.get('[data-test="service-details"]').should('contain.text', expectedText);
+   });
+   ```
+
+5. **Key patterns for step definitions:**
+   - `cy.getBySel('name')` → selects `[data-test="name"]` (custom Kiali command)
+   - `cy.get('td[data-label="Name"]')` → table cells by column header
+   - `getColWithRowText(rowText, colName)` → find a cell by row content and column name (from `table.ts`)
+   - `ensureKialiFinishedLoading()` → wait for Kiali to finish loading (from `transition.ts`)
+   - `openTab(tabName)` → click a tab in the details page (from `transition.ts`)
+   - Use `data-test` attributes on React components for reliable selectors
+
+**Running your new test:**
+
+Ensure the cluster and Kiali are running (see [Prerequisites](#debugging-cypress-tests-with-playwright-mcp) in the MCP debugging section above).
+
+```bash
+# 1. Setup cluster (if not already running — check with `kind get clusters`)
+hack/run-integration-tests.sh --test-suite local --setup-only true
+
+# 2. Start Kiali (if not already running — check with `curl -s http://localhost:20001/kiali/api`)
+$(go env GOPATH)/bin/kiali \
+  -c hack/ci-yaml/ci-test-config-no-cache.yaml run \
+  --cluster-name-overrides kind-ci=cluster-default \
+  --port-forward-tracing --enable-tracing \
+  --port-forward-prom --port-forward-grafana --no-browser &
+
+# 3. Run just your test with debug browser (use @selected tag for fast iteration)
+cd frontend
+CYPRESS_BASE_URL=http://localhost:20001 \
+CYPRESS_REMOTE_DEBUGGING_PORT=9222 \
+npx cypress run --browser chrome --headed --no-exit \
+  -e TAGS="@selected" \
+  --spec "cypress/integration/featureFiles/<your-feature>.feature"
+
+# Or run headless for quick pass/fail (no debug browser)
+CYPRESS_BASE_URL=http://localhost:20001 \
+npx cypress run -e TAGS="@selected"
+```
+
+With `CYPRESS_REMOTE_DEBUGGING_PORT=9222` and `--no-exit`, the `cypress-debugger` MCP tools can connect to inspect the browser, debug failures, and re-run the test with `Ctrl+R`. See the [Debugging Cypress Tests with Playwright MCP](#debugging-cypress-tests-with-playwright-mcp) section for details.
+
+**Iteration loop:**
+
+1. Write or modify the test
+2. Run it with the debug browser flags above — if it fails, examine the error message
+3. Use `cypress-debugger` MCP tools to inspect the browser state if the error isn't clear
+4. Determine if the failure is a **test issue** (wrong selector, wrong assertion) or a **code issue** (feature not working)
+5. Fix the test or the code accordingly
+6. Re-run with `Ctrl+R` via `browser_press_key` if the debug browser is still open, or re-launch the cypress command
+7. Remove the `@selected` tag and verify the test passes with its real suite tag
+
+**Before committing:**
+
+- Remove the `@selected` tag
+- Ensure the test has the correct suite tag (`@core-1`, `@core-2`, etc.)
+- Ensure the test has the correct demo app tag (`@bookinfo-app`, `@error-rates-app`, etc.) if it depends on demo apps
+- Run `make format lint` on any changed Go code
+- Verify the test passes headless: `npx cypress run -e TAGS="@your-suite-tag" --spec "your-feature.feature"`
+
+#### Common Options
+
+```bash
+# Specify Istio version
+hack/run-integration-tests.sh --test-suite frontend --istio-version 1.29.1
+
+# Use minikube instead of kind
+hack/run-integration-tests.sh --test-suite backend --cluster-type minikube
+
+# Record video for Cypress tests
+hack/run-integration-tests.sh --test-suite frontend --with-video true
+
+# Enable ambient mode for multi-primary
+hack/run-integration-tests.sh --test-suite frontend-multi-primary --ambient true
+
+# Full help
+hack/run-integration-tests.sh --help
+```
+
 ---
 
 ## Development Workflows
