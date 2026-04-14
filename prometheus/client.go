@@ -318,13 +318,25 @@ func initPromCache(ctx context.Context) {
 	}
 }
 
-// NewClient creates a new client to the Prometheus API.
-// It returns an error on any problem. kialiSAToken is only used if auth.UseKialiToken is true.
+// NewClient creates a new client to the Prometheus API. It delegates to
+// NewClientFromPrometheusConfig with the main Prometheus configuration so
+// existing callers don't need to specify a PrometheusConfig explicitly.
 func NewClient(conf config.Config, kialiSAToken string) (*Client, error) {
-	cfg := conf.ExternalServices.Prometheus
-	clientConfig := api.Config{Address: cfg.URL}
+	return NewClientFromPrometheusConfig(conf, conf.ExternalServices.Prometheus, kialiSAToken)
+}
 
-	// Prom Cache will be initialized once at first use of Prometheus Client
+// NewClientFromPrometheusConfig creates a new Prometheus API client from
+// an arbitrary PrometheusConfig. This was extracted from NewClient to allow
+// non-default Prometheus endpoints (e.g. custom dashboards) to reuse the
+// same transport-layer initialization (TLS, auth, round-trippers).
+func NewClientFromPrometheusConfig(conf config.Config, promCfg config.PrometheusConfig, kialiSAToken string) (*Client, error) {
+	clientConfig := api.Config{Address: promCfg.URL}
+
+	// Prom Cache will be initialized once at first use of Prometheus Client.
+	// The cache configuration is read from config.Get() (the main Prometheus
+	// config), so callers should ensure the main client is created before any
+	// non-default client to avoid binding the cache to the wrong settings.
+	// In production cmd/server.go guarantees this ordering.
 	once.Do(func() {
 		// create the cache with its own context/logger
 		zl := log.WithGroup(log.PromCacheLogName)
@@ -337,7 +349,7 @@ func NewClient(conf config.Config, kialiSAToken string) (*Client, error) {
 	ctx := log.ToContext(context.Background(), zl)
 
 	// Be sure to copy config.Auth and not modify the existing
-	auth := cfg.Auth
+	auth := promCfg.Auth
 	if auth.UseKialiToken {
 		// Note: if we are using the 'bearer' authentication method then we want to use the Kiali
 		// service account token and not the user's token. This is because Kiali does filtering based
@@ -356,7 +368,7 @@ func NewClient(conf config.Config, kialiSAToken string) (*Client, error) {
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
 
-	transportConfig, err := httputil.CreateTransport(&conf, &auth, roundTripper, httputil.DefaultTimeout, cfg.CustomHeaders)
+	transportConfig, err := httputil.CreateTransport(&conf, &auth, roundTripper, httputil.DefaultTimeout, promCfg.CustomHeaders)
 	if err != nil {
 		return nil, err
 	}
