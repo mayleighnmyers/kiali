@@ -867,8 +867,14 @@ type HealthCacheConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"` // Default: true
 }
 
+// FeatureFlagAuthz controls authorization-related feature flags.
+type FeatureFlagAuthz struct {
+	RequireNamespaceGet bool `yaml:"require_namespace_get,omitempty" json:"requireNamespaceGet,omitempty"`
+}
+
 // KialiFeatureFlags available from the CR
 type KialiFeatureFlags struct {
+	Authz                 FeatureFlagAuthz          `yaml:"authz,omitempty" json:"authz,omitempty"`
 	Clustering            FeatureFlagClustering     `yaml:"clustering,omitempty" json:"clustering,omitempty"`
 	CustomWorkloadTypes   []metav1.GroupVersionKind `yaml:"custom_workload_types,omitempty" json:"customWorkloadTypes,omitempty"`
 	DisabledFeatures      []string                  `yaml:"disabled_features,omitempty" json:"disabledFeatures,omitempty"`
@@ -1142,6 +1148,9 @@ func NewConfig() (c *Config) {
 			VersionLabelName:            "",
 		},
 		KialiFeatureFlags: KialiFeatureFlags{
+			Authz: FeatureFlagAuthz{
+				RequireNamespaceGet: false,
+			},
 			Clustering: FeatureFlagClustering{
 				EnableExecProvider: false,
 			},
