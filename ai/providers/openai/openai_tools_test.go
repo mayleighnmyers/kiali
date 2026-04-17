@@ -1,6 +1,7 @@
 package openai_provider
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,26 @@ import (
 
 	"github.com/kiali/kiali/ai/mcp"
 )
+
+// TestAllMCPToolYAMLsConvertToOpenAI ensures every file in ai/mcp/tools converts without
+// requiring each tool to be listed in a separate golden test (those catch schema drift).
+func TestAllMCPToolYAMLsConvertToOpenAI(t *testing.T) {
+	toolsDir := filepath.Join("..", "..", "mcp", "tools")
+	entries, err := os.ReadDir(toolsDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		name := e.Name()
+		t.Run(name, func(t *testing.T) {
+			tool, err := mcp.LoadToolDefinition(filepath.Join(toolsDir, name))
+			require.NoError(t, err)
+			converted := convertToolToOpenAI(tool)
+			require.NotNil(t, converted.OfFunction, "expected OpenAI function tool for %s", name)
+		})
+	}
+}
 
 func TestConvertToolToOpenAI_FromToolDefinition_GetActionUI(t *testing.T) {
 	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_action_ui.yaml"))
@@ -249,7 +270,7 @@ func TestConvertToolToOpenAI_FromToolDefinition_GetMetrics(t *testing.T) {
 		OfFunction: &openai.ChatCompletionFunctionToolParam{
 			Function: openai.FunctionDefinitionParam{
 				Name:        "get_metrics",
-				Description: openai.String("Returns metrics for the given resource type, namespaces and resource name."),
+				Description: openai.String("Returns a compact JSON summary of Istio metrics (latency quantiles, traffic trends, throughput, payload sizes) for the given resource."),
 				Parameters: openai.FunctionParameters{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -490,6 +511,37 @@ func TestConvertToolToOpenAI_FromToolDefinition_ListTraces(t *testing.T) {
 	assert.Equal(t, expected, converted)
 }
 
+func TestConvertToolToOpenAI_FromToolDefinition_GetTraceDetails(t *testing.T) {
+	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_trace_details.yaml"))
+	require.NoError(t, err)
+
+	converted := convertToolToOpenAI(tool)
+
+	expected := openai.ChatCompletionToolUnionParam{
+		OfFunction: &openai.ChatCompletionFunctionToolParam{
+			Function: openai.FunctionDefinitionParam{
+				Name:        "get_trace_details",
+				Description: openai.String("Fetches a single distributed trace by trace_id and returns its call hierarchy (service tree with duration, status, and nested calls). Use this after list_traces to drill into a specific trace."),
+				Parameters: openai.FunctionParameters{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"traceId": map[string]interface{}{
+							"type":        "string",
+							"description": "Trace ID to fetch (required). Obtain from list_traces list response.",
+						},
+					},
+					"required": []interface{}{
+						"traceId",
+					},
+				},
+			},
+		},
+	}
+
+	require.NotNil(t, converted.OfFunction)
+	assert.Equal(t, expected, converted)
+}
+
 func TestConvertToolToOpenAI_FromToolDefinition_ManageIstioConfig(t *testing.T) {
 	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "manage_istio_config.yaml"))
 	require.NoError(t, err)
@@ -536,7 +588,11 @@ func TestConvertToolToOpenAI_FromToolDefinition_ManageIstioConfig(t *testing.T) 
 						},
 						"group": map[string]interface{}{
 							"type":        "string",
-							"description": "API group of the Istio object (e.g., 'networking.istio.io', 'gateway.networking.k8s.io').",
+							"description": "API group of the Istio object.",
+							"enum": []interface{}{
+								"networking.istio.io",
+								"security.istio.io",
+							},
 						},
 						"version": map[string]interface{}{
 							"type":        "string",
@@ -545,6 +601,19 @@ func TestConvertToolToOpenAI_FromToolDefinition_ManageIstioConfig(t *testing.T) 
 						"kind": map[string]interface{}{
 							"type":        "string",
 							"description": "Kind of the Istio object (e.g., 'VirtualService', 'DestinationRule').",
+							"enum": []interface{}{
+								"VirtualService",
+								"DestinationRule",
+								"Gateway",
+								"ServiceEntry",
+								"Sidecar",
+								"WorkloadEntry",
+								"WorkloadGroup",
+								"EnvoyFilter",
+								"AuthorizationPolicy",
+								"PeerAuthentication",
+								"RequestAuthentication",
+							},
 						},
 						"object": map[string]interface{}{
 							"type":        "string",
@@ -608,7 +677,11 @@ func TestConvertToolToOpenAI_FromToolDefinition_ManageIstioConfigRead(t *testing
 						},
 						"group": map[string]interface{}{
 							"type":        "string",
-							"description": "API group of the Istio object (e.g., 'networking.istio.io', 'gateway.networking.k8s.io'). Required for 'get' action.",
+							"description": "API group of the Istio object. Required for 'get' action.",
+							"enum": []interface{}{
+								"networking.istio.io",
+								"security.istio.io",
+							},
 						},
 						"version": map[string]interface{}{
 							"type":        "string",
@@ -616,7 +689,20 @@ func TestConvertToolToOpenAI_FromToolDefinition_ManageIstioConfigRead(t *testing
 						},
 						"kind": map[string]interface{}{
 							"type":        "string",
-							"description": "Kind of the Istio object (e.g., 'VirtualService', 'DestinationRule'). Required for 'get' action.",
+							"description": "Kind of the Istio object. Required for 'get' action.",
+							"enum": []interface{}{
+								"VirtualService",
+								"DestinationRule",
+								"Gateway",
+								"ServiceEntry",
+								"Sidecar",
+								"WorkloadEntry",
+								"WorkloadGroup",
+								"EnvoyFilter",
+								"AuthorizationPolicy",
+								"PeerAuthentication",
+								"RequestAuthentication",
+							},
 						},
 						"object": map[string]interface{}{
 							"type":        "string",

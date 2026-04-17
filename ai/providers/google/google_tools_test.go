@@ -1,6 +1,7 @@
 package google_provider
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,26 @@ import (
 
 	"github.com/kiali/kiali/ai/mcp"
 )
+
+// TestAllMCPToolYAMLsConvertToGoogleGenAISchema ensures every file in ai/mcp/tools maps to a valid schema.
+func TestAllMCPToolYAMLsConvertToGoogleGenAISchema(t *testing.T) {
+	toolsDir := filepath.Join("..", "..", "mcp", "tools")
+	entries, err := os.ReadDir(toolsDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		name := e.Name()
+		t.Run(name, func(t *testing.T) {
+			tool, err := mcp.LoadToolDefinition(filepath.Join(toolsDir, name))
+			require.NoError(t, err)
+			converted := mapToGenAISchema(tool.GetDefinition())
+			require.NotNil(t, converted, name)
+			assert.Equal(t, genai.TypeObject, converted.Type)
+		})
+	}
+}
 
 func TestConvertToolToGoogle_FromToolDefinition_GetActionUI(t *testing.T) {
 	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_action_ui.yaml"))
@@ -351,6 +372,26 @@ func TestConvertToolToGoogle_FromToolDefinition_ListTraces(t *testing.T) {
 	assert.Equal(t, expected, converted)
 }
 
+func TestConvertToolToGoogle_FromToolDefinition_GetTraceDetails(t *testing.T) {
+	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "get_trace_details.yaml"))
+	require.NoError(t, err)
+
+	converted := mapToGenAISchema(tool.GetDefinition())
+
+	expected := &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"traceId": {
+				Type:        genai.TypeString,
+				Description: "Trace ID to fetch (required). Obtain from list_traces list response.",
+			},
+		},
+		Required: []string{"traceId"},
+	}
+
+	assert.Equal(t, expected, converted)
+}
+
 func TestConvertToolToGoogle_FromToolDefinition_ManageIstioConfig(t *testing.T) {
 	tool, err := mcp.LoadToolDefinition(filepath.Join("..", "..", "mcp", "tools", "manage_istio_config.yaml"))
 	require.NoError(t, err)
@@ -379,7 +420,8 @@ func TestConvertToolToGoogle_FromToolDefinition_ManageIstioConfig(t *testing.T) 
 			},
 			"group": {
 				Type:        genai.TypeString,
-				Description: "API group of the Istio object (e.g., 'networking.istio.io', 'gateway.networking.k8s.io').",
+				Description: "API group of the Istio object.",
+				Enum:        []string{"networking.istio.io", "security.istio.io"},
 			},
 			"version": {
 				Type:        genai.TypeString,
@@ -388,6 +430,11 @@ func TestConvertToolToGoogle_FromToolDefinition_ManageIstioConfig(t *testing.T) 
 			"kind": {
 				Type:        genai.TypeString,
 				Description: "Kind of the Istio object (e.g., 'VirtualService', 'DestinationRule').",
+				Enum: []string{
+					"VirtualService", "DestinationRule", "Gateway", "ServiceEntry", "Sidecar",
+					"WorkloadEntry", "WorkloadGroup", "EnvoyFilter",
+					"AuthorizationPolicy", "PeerAuthentication", "RequestAuthentication",
+				},
 			},
 			"object": {
 				Type:        genai.TypeString,
@@ -433,7 +480,8 @@ func TestConvertToolToGoogle_FromToolDefinition_ManageIstioConfigRead(t *testing
 			},
 			"group": {
 				Type:        genai.TypeString,
-				Description: "API group of the Istio object (e.g., 'networking.istio.io', 'gateway.networking.k8s.io'). Required for 'get' action.",
+				Description: "API group of the Istio object. Required for 'get' action.",
+				Enum:        []string{"networking.istio.io", "security.istio.io"},
 			},
 			"version": {
 				Type:        genai.TypeString,
@@ -441,7 +489,12 @@ func TestConvertToolToGoogle_FromToolDefinition_ManageIstioConfigRead(t *testing
 			},
 			"kind": {
 				Type:        genai.TypeString,
-				Description: "Kind of the Istio object (e.g., 'VirtualService', 'DestinationRule'). Required for 'get' action.",
+				Description: "Kind of the Istio object. Required for 'get' action.",
+				Enum: []string{
+					"VirtualService", "DestinationRule", "Gateway", "ServiceEntry", "Sidecar",
+					"WorkloadEntry", "WorkloadGroup", "EnvoyFilter",
+					"AuthorizationPolicy", "PeerAuthentication", "RequestAuthentication",
+				},
 			},
 			"object": {
 				Type:        genai.TypeString,
