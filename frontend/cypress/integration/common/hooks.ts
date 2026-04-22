@@ -1,5 +1,6 @@
 import { Before, After } from '@badeball/cypress-cucumber-preprocessor';
 import { restoreKialiFeature, GRAPH_CACHE_CONFIG, HEALTH_CACHE_CONFIG } from './kiali-config';
+import { waitForResourceDeletion } from './transition';
 
 const CLUSTER1_CONTEXT = Cypress.env('CLUSTER1_CONTEXT');
 const CLUSTER2_CONTEXT = Cypress.env('CLUSTER2_CONTEXT');
@@ -180,6 +181,13 @@ After({ tags: '@sleep-app-scaleup-after' }, () => {
 After({ tags: '@clean-istio-namespace-resources-after' }, () => {
   cy.exec('kubectl -n istio-system delete PeerAuthentication default', { failOnNonZeroExit: false });
   cy.exec('kubectl -n istio-system delete Sidecar default', { failOnNonZeroExit: false });
+  waitForResourceDeletion('istio-system', 'PeerAuthentication', 'default');
+  waitForResourceDeletion('istio-system', 'Sidecar', 'default');
+  // Restart alpha and beta deployments to force Envoy config reload
+  cy.exec('kubectl rollout restart deployment -n alpha', { failOnNonZeroExit: false });
+  cy.exec('kubectl rollout restart deployment -n beta', { failOnNonZeroExit: false });
+  cy.exec('kubectl rollout status deployment -n alpha --timeout=60s', { failOnNonZeroExit: false });
+  cy.exec('kubectl rollout status deployment -n beta --timeout=60s', { failOnNonZeroExit: false });
 });
 
 const istioSharedMeshConfigMap = `
