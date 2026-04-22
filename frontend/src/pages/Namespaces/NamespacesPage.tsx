@@ -60,6 +60,7 @@ import {
 } from '../../components/Filters/ListColumnManagementModal';
 import { ManagedColumn } from '../../components/VirtualList/ManagedColumnTypes';
 import { NamespacesListActions } from '../../actions/NamespacesListActions';
+import { setControlPlaneRevisions } from './NamespaceRevisionUtils';
 
 // Maximum number of namespaces to include in a single backend API call
 const MAX_NAMESPACES_PER_CALL = 100;
@@ -687,9 +688,9 @@ export class NamespacesPageComponent extends React.Component<NamespacesProps, St
   private fetchControlPlanes = async (): Promise<void> => {
     return API.getControlPlanes()
       .then(response => {
-        this.setState({
-          controlPlanes: response.data
-        });
+        const controlPlanes = response.data;
+        setControlPlaneRevisions(new Set(controlPlanes.map(cp => cp.revision)));
+        this.setState({ controlPlanes });
       })
       .catch(err => {
         addError('Error fetching control planes.', err);
