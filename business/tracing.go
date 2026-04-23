@@ -96,9 +96,48 @@ func operationSpanFilter(ctx context.Context, ns, service string) SpanFilter {
 	// Filter out app spans based on operation name.
 	// For envoy traces, operation name is like "service-name.namespace.svc.cluster.local:8000/*"
 	return func(span *jaegerModels.Span) bool {
+		// For ambient traces, use canonical service tags when available.
+		if spanTagMatches(span, "istio.destination_canonical_service", "istio.destination_namespace", service, ns) ||
+			spanTagMatches(span, "istio.source_canonical_service", "istio.source_namespace", service, ns) {
+			return true
+		}
 		log.FromContext(ctx).Trace().Msgf("operationSpanFilter [%s] has prefix [%s]", span.OperationName, fqService)
 		return strings.HasPrefix(span.OperationName, fqService)
 	}
+}
+
+func spanTagValue(span *jaegerModels.Span, key string) (string, bool) {
+	for _, tag := range span.Tags {
+		if tag.Key != key {
+			continue
+		}
+		if v, ok := tag.Value.(string); ok && v != "" {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func spanTagMatches(span *jaegerModels.Span, nameTag, namespaceTag, expectedName, expectedNamespace string) bool {
+	name, nameFound := spanTagValue(span, nameTag)
+	namespace, nsFound := spanTagValue(span, namespaceTag)
+	if !nameFound || !nsFound {
+		return false
+	}
+	return name == expectedName && namespace == expectedNamespace
+}
+
+func spanMatchesAmbientWorkload(span *jaegerModels.Span, workload, namespace string) bool {
+	return spanTagMatches(span, "istio.destination_workload", "istio.destination_namespace", workload, namespace) ||
+		spanTagMatches(span, "istio.source_workload", "istio.source_namespace", workload, namespace)
+}
+
+func spanHasAmbientWorkloadTags(span *jaegerModels.Span) bool {
+	_, hasDestWorkload := spanTagValue(span, "istio.destination_workload")
+	_, hasDestNamespace := spanTagValue(span, "istio.destination_namespace")
+	_, hasSourceWorkload := spanTagValue(span, "istio.source_workload")
+	_, hasSourceNamespace := spanTagValue(span, "istio.source_namespace")
+	return (hasDestWorkload && hasDestNamespace) || (hasSourceWorkload && hasSourceNamespace)
 }
 
 func (in *TracingService) GetWorkloadSpans(ctx context.Context, ns, workload string, query models.TracingQuery) ([]model.TracingSpan, error) {
@@ -279,8 +318,14 @@ func spanMatchesWorkload(ctx context.Context, span *jaegerModels.Span, namespace
 	// If the workload has a waypoint, the span won't match, but the operation name can
 	// When the workload has a waypoint, the operation name is filtered by the service
 	if tracingName.WaypointName != "" {
+		if spanHasAmbientWorkloadTags(span) {
+			matched := spanMatchesAmbientWorkload(span, tracingName.Workload, namespace)
+			zl.Trace().Msgf("spanMatchesWorkload ambient tags match=[%t] workload=[%s] tags=[%+v]", matched, tracingName.Workload, span.Tags)
+			return matched
+		}
+		// Fallback for older Istio traces that don't include ambient workload tags.
 		op := fmt.Sprintf("%s.%s", tracingName.App, namespace)
-		zl.Trace().Msgf("spanMatchesWorkload [%s] has prefix [%s] (waypoint name)", span.OperationName, op)
+		zl.Trace().Msgf("spanMatchesWorkload fallback operationName=[%s] prefix=[%s] (waypoint legacy)", span.OperationName, op)
 		return strings.HasPrefix(span.OperationName, op)
 	}
 	// For envoy traces, with a workload named "ai-locals", node_id is like:
