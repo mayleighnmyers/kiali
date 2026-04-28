@@ -1,33 +1,34 @@
 import * as React from 'react';
 import { isProxyStatusComponentSynced, isProxyStatusSynced, ProxyStatus } from '../../types/Health';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { kialiStyle } from 'styles/StyleUtils';
 import { PFColors } from '../../components/Pf/PfColors';
+import { useKialiTheme } from 'utils/ThemeUtils';
+import { Theme } from 'types/Common';
 
 type Props = {
   status?: ProxyStatus;
 };
 
-const smallStyle = kialiStyle({ fontSize: '70%', color: PFColors.White });
-const colorStyle = kialiStyle({ fontSize: '1.1rem', color: PFColors.White });
+export const ProxyStatusList: React.FC<Props> = (props: Props) => {
+  const darkTheme = useKialiTheme() === Theme.DARK;
+  const textColor = darkTheme ? PFColors.TextTooltipDarkTheme : PFColors.TextTooltipLightTheme;
 
-export class ProxyStatusList extends React.Component<Props> {
-  statusList = () => {
-    if (!this.props.status) {
+  const statusList = (): React.ReactNode[] => {
+    if (!props.status) {
       return [];
     }
 
     return [
-      { c: 'CDS', s: this.props.status.CDS },
-      { c: 'EDS', s: this.props.status.EDS },
-      { c: 'LDS', s: this.props.status.LDS },
-      { c: 'RDS', s: this.props.status.RDS }
+      { c: 'CDS', s: props.status.CDS },
+      { c: 'EDS', s: props.status.EDS },
+      { c: 'LDS', s: props.status.LDS },
+      { c: 'RDS', s: props.status.RDS }
     ].map((value: { c: string; s: string }, i: number) => {
       if (!isProxyStatusComponentSynced(value.s)) {
         const status = value.s ? value.s : '-';
         return (
-          <StackItem key={'proxy-status-' + i} className={smallStyle}>
-            {value.c + ': ' + status}
+          <StackItem key={`proxy-status-${i}`} style={{ fontSize: '70%', color: textColor }}>
+            {`${value.c}: ${status}`}
           </StackItem>
         );
       } else {
@@ -36,16 +37,14 @@ export class ProxyStatusList extends React.Component<Props> {
     });
   };
 
-  render() {
-    if (this.props.status && !isProxyStatusSynced(this.props.status)) {
-      return (
-        <Stack>
-          <StackItem className={colorStyle}>Istio Proxy Status</StackItem>
-          {this.statusList()}
-        </Stack>
-      );
-    } else {
-      return null;
-    }
+  if (props.status && !isProxyStatusSynced(props.status)) {
+    return (
+      <Stack>
+        <StackItem style={{ fontSize: '1.1rem', fontWeight: 'bold', color: textColor }}>Istio Proxy Status</StackItem>
+        {statusList()}
+      </Stack>
+    );
+  } else {
+    return null;
   }
-}
+};
