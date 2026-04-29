@@ -3,7 +3,6 @@ import { ObjectCheck, ValidationTypes } from '../../types/IstioObjects';
 import { Validation } from './Validation';
 import { highestSeverity } from '../../types/ServiceInfo';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { PFColors } from '../Pf/PfColors';
 import { useKialiTheme } from 'utils/ThemeUtils';
 import { Theme } from 'types/Common';
 
@@ -13,12 +12,13 @@ type ValidationStackProps = {
 
 export const ValidationStack: React.FC<ValidationStackProps> = (props: ValidationStackProps) => {
   const darkTheme = useKialiTheme() === Theme.DARK;
-  const textColor = darkTheme ? PFColors.TextTooltipDarkTheme : PFColors.TextTooltipLightTheme;
+
+  const textColor = darkTheme ? '#151515' : '#ffffff';
 
   const validationList = (): React.ReactNode[] => {
     return (props.checks ?? []).map((check, index) => {
       return (
-        <StackItem key={`validation-check-item-${index}`}>
+        <StackItem key={`validation-check-item-${index}`} style={{ color: textColor }}>
           <Validation
             key={`validation-check-${index}`}
             severity={check.severity}

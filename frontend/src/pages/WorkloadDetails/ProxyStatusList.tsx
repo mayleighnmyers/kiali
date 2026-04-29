@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { isProxyStatusComponentSynced, isProxyStatusSynced, ProxyStatus } from '../../types/Health';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { PFColors } from '../../components/Pf/PfColors';
 import { useKialiTheme } from 'utils/ThemeUtils';
 import { Theme } from 'types/Common';
 
@@ -11,7 +10,8 @@ type Props = {
 
 export const ProxyStatusList: React.FC<Props> = (props: Props) => {
   const darkTheme = useKialiTheme() === Theme.DARK;
-  const textColor = darkTheme ? PFColors.TextTooltipDarkTheme : PFColors.TextTooltipLightTheme;
+
+  const textColor = darkTheme ? '#151515' : '#ffffff';
 
   const statusList = (): React.ReactNode[] => {
     if (!props.status) {
