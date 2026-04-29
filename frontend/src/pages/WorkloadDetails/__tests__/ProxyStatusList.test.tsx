@@ -4,10 +4,9 @@ import { ProxyStatusList } from '../ProxyStatusList';
 import { ProxyStatus } from '../../../types/Health';
 import { Stack, StackItem } from '@patternfly/react-core';
 import { shallowToJson } from 'enzyme-to-json';
-import { Theme } from 'types/Common';
 
 jest.mock('utils/ThemeUtils', () => ({
-  useKialiTheme: () => Theme.LIGHT
+  useKialiTheme: () => 'light'
 }));
 
 const createSyncedProxyStatus = (): ProxyStatus => ({
