@@ -7,7 +7,7 @@ exports[`ProxyStatusList when there are components without value match the snaps
   <StackItem
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "1.1rem",
         "fontWeight": "bold",
       }
@@ -19,7 +19,7 @@ exports[`ProxyStatusList when there are components without value match the snaps
     key="proxy-status-0"
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "70%",
       }
     }
@@ -30,7 +30,7 @@ exports[`ProxyStatusList when there are components without value match the snaps
     key="proxy-status-3"
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "70%",
       }
     }
@@ -45,7 +45,7 @@ exports[`ProxyStatusList when there are unsyced components match the snapshot 1`
   <StackItem
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "1.1rem",
         "fontWeight": "bold",
       }
@@ -57,7 +57,7 @@ exports[`ProxyStatusList when there are unsyced components match the snapshot 1`
     key="proxy-status-0"
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "70%",
       }
     }
@@ -68,7 +68,7 @@ exports[`ProxyStatusList when there are unsyced components match the snapshot 1`
     key="proxy-status-3"
     style={
       Object {
-        "color": "#ffffff",
+        "color": "White",
         "fontSize": "70%",
       }
     }
