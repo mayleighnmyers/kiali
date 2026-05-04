@@ -15,6 +15,15 @@ const tooltipContentStyle = kialiStyle({
   }
 });
 
+const titleStyle = kialiStyle({
+  fontSize: '1.1rem',
+  fontWeight: 'bold'
+});
+
+const statusStyle = kialiStyle({
+  fontSize: '70%'
+});
+
 export const ProxyStatusList: React.FC<Props> = (props: Props) => {
   const statusList = (): React.ReactNode[] => {
     if (!props.status) {
@@ -30,7 +39,7 @@ export const ProxyStatusList: React.FC<Props> = (props: Props) => {
       if (!isProxyStatusComponentSynced(value.s)) {
         const status = value.s ? value.s : '-';
         return (
-          <StackItem key={`proxy-status-${i}`} style={{ fontSize: '70%' }}>
+          <StackItem key={`proxy-status-${i}`} className={statusStyle}>
             {`${value.c}: ${status}`}
           </StackItem>
         );
@@ -43,7 +52,7 @@ export const ProxyStatusList: React.FC<Props> = (props: Props) => {
   if (props.status && !isProxyStatusSynced(props.status)) {
     return (
       <Stack className={tooltipContentStyle}>
-        <StackItem style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Istio Proxy Status</StackItem>
+        <StackItem className={titleStyle}>Istio Proxy Status</StackItem>
         {statusList()}
       </Stack>
     );

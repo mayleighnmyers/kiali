@@ -17,6 +17,10 @@ const tooltipContentStyle = kialiStyle({
   }
 });
 
+const titleStyle = kialiStyle({
+  fontWeight: 'bold'
+});
+
 export const ValidationStack: React.FC<ValidationStackProps> = (props: ValidationStackProps) => {
   const validationList = (): React.ReactNode[] => {
     return (props.checks ?? []).map((check, index) => {
@@ -38,7 +42,7 @@ export const ValidationStack: React.FC<ValidationStackProps> = (props: Validatio
   if (!isValid) {
     return (
       <Stack className={tooltipContentStyle}>
-        <StackItem style={{ fontWeight: 'bold' }}>Istio validations</StackItem>
+        <StackItem className={titleStyle}>Istio validations</StackItem>
         {validationList()}
       </Stack>
     );

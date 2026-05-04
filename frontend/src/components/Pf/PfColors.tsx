@@ -56,8 +56,6 @@ export enum PFColors {
   Link = 'var(--pf-t--global--text--color--link--default)',
   LinkTooltipDarkTheme = 'var(--pf-t--global--text--color--link--100)',
   LinkTooltipLightTheme = 'var(--pf-t--color--blue--20)', // code broken, should be --pf-t--global--dark--text--color--link--100
-  TextTooltipDarkTheme = 'Black1000',
-  TextTooltipLightTheme = 'White',
 
   // status colors https://www.patternfly.org/design-foundations/colors/#status-and-state-colors
   Custom = 'var(--pf-t--global--color--status--custom--default)',

@@ -7,32 +7,19 @@ exports[`ProxyStatusList when there are components without value match the snaps
   className="kiali_f14kfh0p"
 >
   <StackItem
-    style={
-      Object {
-        "fontSize": "1.1rem",
-        "fontWeight": "bold",
-      }
-    }
+    className="kiali_fsmbsvg"
   >
     Istio Proxy Status
   </StackItem>
   <StackItem
+    className="kiali_f1wsrw0w"
     key="proxy-status-0"
-    style={
-      Object {
-        "fontSize": "70%",
-      }
-    }
   >
     CDS: -
   </StackItem>
   <StackItem
+    className="kiali_f1wsrw0w"
     key="proxy-status-3"
-    style={
-      Object {
-        "fontSize": "70%",
-      }
-    }
   >
     RDS: -
   </StackItem>
@@ -44,32 +31,19 @@ exports[`ProxyStatusList when there are unsyced components match the snapshot 1`
   className="kiali_f14kfh0p"
 >
   <StackItem
-    style={
-      Object {
-        "fontSize": "1.1rem",
-        "fontWeight": "bold",
-      }
-    }
+    className="kiali_fsmbsvg"
   >
     Istio Proxy Status
   </StackItem>
   <StackItem
+    className="kiali_f1wsrw0w"
     key="proxy-status-0"
-    style={
-      Object {
-        "fontSize": "70%",
-      }
-    }
   >
     CDS: NOT_SENT
   </StackItem>
   <StackItem
+    className="kiali_f1wsrw0w"
     key="proxy-status-3"
-    style={
-      Object {
-        "fontSize": "70%",
-      }
-    }
   >
     RDS: STALE
   </StackItem>
