@@ -5,6 +5,7 @@ import { highestSeverity } from '../../types/ServiceInfo';
 import { Stack, StackItem } from '@patternfly/react-core';
 import { useKialiTheme } from 'utils/ThemeUtils';
 import { Theme } from 'types/Common';
+import { PFColors } from 'components/Pf/PfColors';
 
 type ValidationStackProps = {
   checks?: ObjectCheck[];
@@ -13,7 +14,7 @@ type ValidationStackProps = {
 export const ValidationStack: React.FC<ValidationStackProps> = (props: ValidationStackProps) => {
   const darkTheme = useKialiTheme() === Theme.DARK;
 
-  const textColor = darkTheme ? '#151515' : '#ffffff';
+  const textColor: PFColors = darkTheme ? PFColors.TextTooltipDarkTheme : PFColors.TextTooltipLightTheme;
 
   const validationList = (): React.ReactNode[] => {
     return (props.checks ?? []).map((check, index) => {
