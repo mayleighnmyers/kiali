@@ -1,19 +1,21 @@
 import * as React from 'react';
 import { isProxyStatusComponentSynced, isProxyStatusSynced, ProxyStatus } from '../../types/Health';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { useKialiTheme } from 'utils/ThemeUtils';
-import { Theme } from 'types/Common';
-import { PFColors } from 'components/Pf/PfColors';
+import { kialiStyle } from 'styles/StyleUtils';
 
 type Props = {
   status?: ProxyStatus;
 };
 
+const tooltipContentStyle = kialiStyle({
+  $nest: {
+    '& [class*="pf-v6-c-content"]': {
+      color: 'inherit'
+    }
+  }
+});
+
 export const ProxyStatusList: React.FC<Props> = (props: Props) => {
-  const darkTheme = useKialiTheme() === Theme.DARK;
-
-  const textColor: PFColors = darkTheme ? PFColors.TextTooltipDarkTheme : PFColors.TextTooltipLightTheme;
-
   const statusList = (): React.ReactNode[] => {
     if (!props.status) {
       return [];
@@ -28,7 +30,7 @@ export const ProxyStatusList: React.FC<Props> = (props: Props) => {
       if (!isProxyStatusComponentSynced(value.s)) {
         const status = value.s ? value.s : '-';
         return (
-          <StackItem key={`proxy-status-${i}`} style={{ fontSize: '70%', color: textColor }}>
+          <StackItem key={`proxy-status-${i}`} style={{ fontSize: '70%' }}>
             {`${value.c}: ${status}`}
           </StackItem>
         );
@@ -40,8 +42,8 @@ export const ProxyStatusList: React.FC<Props> = (props: Props) => {
 
   if (props.status && !isProxyStatusSynced(props.status)) {
     return (
-      <Stack>
-        <StackItem style={{ fontSize: '1.1rem', fontWeight: 'bold', color: textColor }}>Istio Proxy Status</StackItem>
+      <Stack className={tooltipContentStyle}>
+        <StackItem style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Istio Proxy Status</StackItem>
         {statusList()}
       </Stack>
     );

@@ -5,10 +5,6 @@ import { ProxyStatus } from '../../../types/Health';
 import { Stack, StackItem } from '@patternfly/react-core';
 import { shallowToJson } from 'enzyme-to-json';
 
-jest.mock('utils/ThemeUtils', () => ({
-  useKialiTheme: () => 'light'
-}));
-
 const createSyncedProxyStatus = (): ProxyStatus => ({
   CDS: 'Synced',
   EDS: 'Synced',

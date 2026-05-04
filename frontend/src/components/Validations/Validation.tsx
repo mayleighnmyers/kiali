@@ -24,7 +24,6 @@ type ValidationProps = {
   message?: string;
   messageColor?: boolean;
   severity: ValidationTypes;
-  textColor?: string;
 };
 
 const ErrorValidation: IconProps = {
@@ -66,8 +65,8 @@ export const Validation: React.FC<ValidationProps> = (props: ValidationProps) =>
   const severityColor = { color: validation.color };
   const hasMessage = !!props.message;
 
-  const textStyle = props.textColor ? { color: props.textColor } : props.messageColor ? severityColor : {};
-
+  // Set styles
+  const textStyle = props.messageColor ? severityColor : {};
   const iconStyle = kialiStyle(severityColor);
 
   const iconProps: IconProps = {
